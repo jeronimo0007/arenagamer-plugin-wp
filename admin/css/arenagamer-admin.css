@@ -1,0 +1,16 @@
+/* ArenaGamer Admin Styles */
+.wrap h1 .dashicons {
+    font-size: 28px;
+    vertical-align: middle;
+    color: #7c3aed;
+}
+
+.wrap h2 {
+    margin-top: 24px;
+}
+
+.widefat code {
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+}

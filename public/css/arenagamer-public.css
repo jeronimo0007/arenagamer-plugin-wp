@@ -1,0 +1,387 @@
+/* ==========================================================================
+   ArenaGamer WordPress Plugin - Frontend Styles
+   ========================================================================== */
+
+:root {
+    --ag-primary: #7c3aed;
+    --ag-primary-dark: #6d28d9;
+    --ag-primary-light: #a78bfa;
+    --ag-success: #22c55e;
+    --ag-warning: #f59e0b;
+    --ag-danger: #ef4444;
+    --ag-info: #3b82f6;
+    --ag-dark: #1f2937;
+    --ag-gray: #6b7280;
+    --ag-light: #f3f4f6;
+    --ag-white: #ffffff;
+    --ag-border: #e5e7eb;
+    --ag-radius: 8px;
+    --ag-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    --ag-shadow-lg: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Grid */
+.ag-grid {
+    display: grid;
+    gap: 20px;
+}
+.ag-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.ag-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.ag-grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+@media (max-width: 768px) {
+    .ag-grid-2, .ag-grid-3, .ag-grid-4 {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    .ag-grid-3, .ag-grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Card */
+.ag-card {
+    background: var(--ag-white);
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+    overflow: hidden;
+    box-shadow: var(--ag-shadow);
+    transition: box-shadow 0.2s, transform 0.2s;
+}
+.ag-card:hover {
+    box-shadow: var(--ag-shadow-lg);
+    transform: translateY(-2px);
+}
+.ag-card-header {
+    padding: 12px 16px;
+    background: var(--ag-light);
+    border-bottom: 1px solid var(--ag-border);
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.ag-card-body {
+    padding: 16px;
+}
+.ag-card-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ag-dark);
+    margin: 0 0 8px;
+}
+.ag-card-game {
+    color: var(--ag-gray);
+    font-size: 14px;
+    margin: 0 0 12px;
+}
+.ag-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--ag-gray);
+}
+.ag-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.ag-free {
+    color: var(--ag-success);
+    font-weight: 600;
+}
+.ag-card-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--ag-border);
+    text-align: center;
+}
+
+/* Badges */
+.ag-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.ag-badge-sm { font-size: 10px; padding: 2px 8px; }
+.ag-badge-registration_open { background: #dcfce7; color: #166534; }
+.ag-badge-registration_closed { background: #fef3c7; color: #92400e; }
+.ag-badge-draft { background: var(--ag-light); color: var(--ag-gray); }
+.ag-badge-in_progress { background: #dbeafe; color: #1e40af; }
+.ag-badge-completed { background: #ede9fe; color: #5b21b6; }
+.ag-badge-cancelled { background: #fecaca; color: #991b1b; }
+.ag-badge-scheduled { background: var(--ag-light); color: var(--ag-gray); }
+.ag-badge-walkover { background: #fef3c7; color: #92400e; }
+.ag-badge-rescheduled { background: #fef3c7; color: #92400e; }
+.ag-badge-pending { background: var(--ag-light); color: var(--ag-gray); }
+.ag-badge-type { background: var(--ag-dark); color: var(--ag-white); }
+
+/* Buttons */
+.ag-btn {
+    display: inline-block;
+    padding: 8px 20px;
+    border-radius: var(--ag-radius);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.2s, transform 0.1s;
+    text-align: center;
+}
+.ag-btn:hover { transform: translateY(-1px); }
+.ag-btn:active { transform: translateY(0); }
+.ag-btn-primary { background: var(--ag-primary); color: var(--ag-white); }
+.ag-btn-primary:hover { background: var(--ag-primary-dark); color: var(--ag-white); }
+.ag-btn-outline { background: transparent; border: 2px solid var(--ag-primary); color: var(--ag-primary); }
+.ag-btn-outline:hover { background: var(--ag-primary); color: var(--ag-white); }
+.ag-btn-block { display: block; width: 100%; }
+.ag-btn-lg { padding: 12px 28px; font-size: 16px; }
+.ag-btn-sm { padding: 4px 12px; font-size: 12px; }
+.ag-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Forms */
+.ag-form { max-width: 500px; }
+.ag-form-group { margin-bottom: 16px; }
+.ag-form-group label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 14px; color: var(--ag-dark); }
+.ag-input, .ag-select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+    font-size: 14px;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+}
+.ag-input:focus, .ag-select:focus {
+    outline: none;
+    border-color: var(--ag-primary);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+}
+.ag-input-sm { max-width: 100px; }
+.ag-form-row { display: flex; gap: 12px; }
+.ag-half { flex: 1; }
+.ag-form-inline { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.ag-form-inline .ag-form-group { margin-bottom: 0; }
+.ag-form-message { margin: 8px 0; font-size: 13px; }
+.ag-form-message.error { color: var(--ag-danger); }
+.ag-form-message.success { color: var(--ag-success); }
+.ag-checkbox-group { display: flex; flex-wrap: wrap; gap: 12px; }
+.ag-checkbox-group label { font-weight: 400; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+
+/* Auth Tabs */
+.ag-tabs { display: flex; border-bottom: 2px solid var(--ag-border); margin-bottom: 20px; }
+.ag-tab {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    font-weight: 600;
+    color: var(--ag-gray);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.2s, border-color 0.2s;
+}
+.ag-tab:hover { color: var(--ag-primary); }
+.ag-tab.ag-tab-active { color: var(--ag-primary); border-bottom-color: var(--ag-primary); }
+.ag-tab-content { display: none; }
+.ag-tab-content.ag-active { display: block; }
+
+/* Tournament Detail */
+.ag-detail-header {
+    margin-bottom: 24px;
+}
+.ag-detail-title {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--ag-dark);
+    margin: 0 0 8px;
+}
+.ag-detail-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.ag-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+    padding: 16px;
+    background: var(--ag-light);
+    border-radius: var(--ag-radius);
+}
+.ag-info-item { display: flex; flex-direction: column; }
+.ag-info-label { font-size: 12px; color: var(--ag-gray); text-transform: uppercase; letter-spacing: 0.5px; }
+.ag-info-value { font-size: 16px; font-weight: 700; color: var(--ag-dark); }
+
+.ag-section { margin-bottom: 24px; }
+.ag-section h3 { font-size: 18px; font-weight: 700; color: var(--ag-dark); margin: 0 0 12px; }
+.ag-rules { background: var(--ag-light); padding: 16px; border-radius: var(--ag-radius); font-size: 14px; }
+
+/* Matches */
+.ag-matches-list { display: flex; flex-direction: column; gap: 8px; }
+.ag-match-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--ag-white);
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+    font-size: 14px;
+}
+.ag-match-number { font-weight: 700; color: var(--ag-gray); min-width: 40px; }
+.ag-match-teams { flex: 1; display: flex; align-items: center; gap: 8px; }
+.ag-match-vs { color: var(--ag-primary); font-weight: 800; font-size: 12px; }
+.ag-match-score { font-weight: 700; min-width: 50px; text-align: center; }
+.ag-match-time { color: var(--ag-gray); font-size: 13px; min-width: 80px; }
+
+/* Bracket */
+.ag-bracket-container {
+    display: flex;
+    gap: 24px;
+    overflow-x: auto;
+    padding: 20px 0;
+}
+.ag-bracket-round { min-width: 220px; }
+.ag-round-header {
+    text-align: center;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--ag-primary);
+    padding: 8px;
+    margin-bottom: 12px;
+    border-bottom: 2px solid var(--ag-primary);
+}
+.ag-bracket-match {
+    background: var(--ag-white);
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+.ag-bracket-match.ag-match-done { border-color: var(--ag-primary-light); }
+.ag-bracket-team {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--ag-border);
+}
+.ag-bracket-team:last-of-type { border-bottom: none; }
+.ag-bracket-team.ag-winner {
+    background: #f5f3ff;
+    font-weight: 700;
+}
+.ag-bracket-name { flex: 1; }
+.ag-bracket-score { font-weight: 700; min-width: 24px; text-align: right; }
+.ag-bracket-time { font-size: 11px; color: var(--ag-gray); text-align: center; padding: 4px; background: var(--ag-light); }
+
+/* Dashboard */
+.ag-dash-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.ag-dash-header h2 { margin: 0; color: var(--ag-dark); }
+.ag-dash-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+@media (max-width: 768px) {
+    .ag-dash-stats { grid-template-columns: 1fr; }
+}
+.ag-stat-card {
+    background: var(--ag-white);
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+    padding: 20px;
+    text-align: center;
+}
+.ag-stat-value { font-size: 28px; font-weight: 800; color: var(--ag-primary); }
+.ag-stat-label { font-size: 13px; color: var(--ag-gray); text-transform: uppercase; }
+.ag-dash-tabs { margin-bottom: 20px; }
+
+/* User Info */
+.ag-user-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--ag-light);
+    border-radius: var(--ag-radius);
+}
+.ag-user-avatar {
+    width: 40px; height: 40px;
+    background: var(--ag-primary);
+    color: var(--ag-white);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 16px;
+}
+.ag-user-details { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.ag-user-email { font-size: 13px; color: var(--ag-gray); }
+
+/* Teams */
+.ag-teams-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.ag-team-card {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--ag-white);
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+}
+.ag-team-tag { color: var(--ag-primary); font-weight: 700; }
+
+/* Empty state */
+.ag-empty, .ag-empty-sm {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--ag-gray);
+}
+.ag-empty-icon { font-size: 48px; margin-bottom: 12px; }
+.ag-empty h3 { color: var(--ag-dark); }
+
+/* Pagination */
+.ag-pagination { display: flex; justify-content: center; gap: 4px; margin-top: 24px; }
+.ag-page-link {
+    display: inline-block;
+    padding: 6px 12px;
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+    text-decoration: none;
+    color: var(--ag-dark);
+    font-size: 14px;
+}
+.ag-page-link:hover { background: var(--ag-light); }
+.ag-page-link.ag-active { background: var(--ag-primary); color: var(--ag-white); border-color: var(--ag-primary); }
+
+/* Login notice */
+.ag-login-notice {
+    padding: 16px;
+    background: #fef3c7;
+    border-radius: var(--ag-radius);
+    color: #92400e;
+    font-weight: 500;
+}
+
+/* Loading */
+.ag-loading { color: var(--ag-gray); font-style: italic; }
+.ag-spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid var(--ag-border);
+    border-top-color: var(--ag-primary);
+    border-radius: 50%;
+    animation: ag-spin 0.6s linear infinite;
+}
+@keyframes ag-spin { to { transform: rotate(360deg); } }
+
+/* Notice */
+.ag-notice { padding: 12px 16px; background: #dbeafe; border-radius: var(--ag-radius); color: #1e40af; }
+.ag-error { padding: 12px 16px; background: #fecaca; border-radius: var(--ag-radius); color: #991b1b; }
