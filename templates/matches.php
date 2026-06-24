@@ -1,4 +1,4 @@
-<div class="ag-client" data-ag-page="partidas">
+<?php echo AG_Theme::client_open('partidas'); ?>
     <div class="ag-header">
         <h2 class="ag-title">Minhas Partidas</h2>
         <p class="ag-subtitle">Partidas dos torneios em que você participa</p>

@@ -14,7 +14,10 @@ $tabs = [
 ];
 $active_filter = $ag_filter ?? 'REGISTRATION_OPEN';
 ?>
-<div class="ag-client ag-client--roda" data-ag-page="torneios" data-ag-view="<?php echo esc_attr($ag_view ?? 'abertos'); ?>" data-ag-active-filter="<?php echo esc_attr($active_filter); ?>">
+<?php echo AG_Theme::client_open('torneios', [
+    'data-ag-view'          => $ag_view ?? 'abertos',
+    'data-ag-active-filter' => $active_filter,
+]); ?>
     <div class="vs-tab-nav ag-tournament-tabs">
         <ul class="nav nav-tabs" role="tablist" aria-label="Filtrar torneios">
             <?php foreach ($tabs as $filter => $label) : ?>

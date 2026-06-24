@@ -47,10 +47,19 @@ class AG_Shortcodes {
         self::register_tag('pagina perfil', [self::class, 'profile']);
         self::register_tag('arenagamer_perfil', [self::class, 'profile']);
 
+        self::register_tag('pagina jogador', [self::class, 'player_profile']);
+        self::register_tag('arenagamer_jogador', [self::class, 'player_profile']);
+
+        self::register_tag('pagina time', [self::class, 'team_detail']);
+        self::register_tag('arenagamer_time', [self::class, 'team_detail']);
+
         self::register_tag('pagina dashboard', [self::class, 'dashboard']);
         self::register_tag('pagina painel', [self::class, 'dashboard']);
         self::register_tag('arenagamer_dashboard', [self::class, 'dashboard']);
         self::register_tag('arenagamer_painel', [self::class, 'dashboard']);
+
+        self::register_tag('pagina criar torneio', [self::class, 'create_tournament']);
+        self::register_tag('arenagamer_criar_torneio', [self::class, 'create_tournament']);
     }
 
     /** @return array<string, array{filter: string, title: string, subtitle: string}> */
@@ -153,6 +162,18 @@ class AG_Shortcodes {
                 'alt'     => '[pagina perfil]',
                 'extra'   => '',
                 'desc'    => 'Perfil do usuário',
+            ],
+            [
+                'primary' => '[arenagamer_jogador]',
+                'alt'     => '[pagina jogador]',
+                'extra'   => '',
+                'desc'    => 'Perfil público de jogador. Use /jogador/123 ou ?id=123 na URL.',
+            ],
+            [
+                'primary' => '[arenagamer_time]',
+                'alt'     => '[pagina time]',
+                'extra'   => '',
+                'desc'    => 'Detalhes do time. Use /time/123 ou ?id=123 na URL.',
             ],
             [
                 'primary' => '[arenagamer_dashboard]',
@@ -278,8 +299,36 @@ class AG_Shortcodes {
         return self::render('profile');
     }
 
+    public static function player_profile($atts = []): string {
+        AG_Assets::ensure_loaded();
+        $atts = shortcode_atts(['id' => ''], is_array($atts) ? $atts : [], 'arenagamer_jogador');
+        ob_start();
+        $player_id = AG_Rewrites::resolve_player_id_from_request();
+        if ($player_id === '' && $atts['id'] !== '') {
+            $player_id = preg_replace('/\D/', '', (string) $atts['id']);
+        }
+        include AG_CLIENTE_PATH . 'templates/player-profile.php';
+        return ob_get_clean();
+    }
+
+    public static function team_detail($atts = []): string {
+        AG_Assets::ensure_loaded();
+        $atts = shortcode_atts(['id' => ''], is_array($atts) ? $atts : [], 'arenagamer_time');
+        ob_start();
+        $team_id = AG_Rewrites::resolve_team_id_from_request();
+        if ($team_id === '' && $atts['id'] !== '') {
+            $team_id = preg_replace('/\D/', '', (string) $atts['id']);
+        }
+        include AG_CLIENTE_PATH . 'templates/team-detail.php';
+        return ob_get_clean();
+    }
+
     public static function dashboard(): string {
         return self::render('dashboard');
+    }
+
+    public static function create_tournament(): string {
+        return self::render('create-tournament');
     }
 
     public static function tournament_detail($atts): string {

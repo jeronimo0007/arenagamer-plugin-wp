@@ -30,6 +30,7 @@ class AG_Assets {
         self::$loaded = true;
 
         $settings = AG_Settings::get();
+        $page_urls = AG_Pages::urls_for_frontend($settings);
         $packages = array_values(array_filter(array_map(
             static fn($line) => trim($line),
             explode("\n", $settings['credit_packages'])
@@ -58,21 +59,18 @@ class AG_Assets {
             true
         );
 
+        do_action('arenagamer_enqueue_assets');
+
         wp_localize_script('arenagamer-cliente-api', 'ArenaGamerConfig', [
             'ajaxUrl'        => admin_url('admin-ajax.php'),
             'nonce'          => wp_create_nonce('arenagamer_api'),
             'apiUrl'         => $settings['api_url'],
-            'loginUrl'       => $settings['login_url'],
-            'dashboardUrl'   => $settings['dashboard_url'] ?? ($settings['home_url'] ?? ''),
-            'homeUrl'        => $settings['home_url'],
-            'tournamentUrl'  => $settings['tournament_url'] ?? '',
-            'pageUrls'       => [
-                'torneios'          => $settings['torneios_url'] ?? '',
-                'meus-torneios'     => $settings['participando_url'] ?? '',
-                'partidas'          => $settings['participando_url'] ?? '',
-                'creditos'          => $settings['carteira_url'] ?? '',
-                'comprar-creditos'  => $settings['carteira_url'] ?? '',
-            ],
+            'loginUrl'       => $page_urls['login'] ?? $settings['login_url'],
+            'cadastroUrl'    => $page_urls['cadastro'] ?? '',
+            'dashboardUrl'   => $page_urls['dashboard'] ?? ($page_urls['home'] ?? ''),
+            'homeUrl'        => $page_urls['home'] ?? $settings['home_url'],
+            'tournamentUrl'  => $page_urls['torneio'] ?? ($settings['tournament_url'] ?? ''),
+            'pageUrls'       => $page_urls,
             'creditPackages' => $packages,
             'i18n'           => [
                 'loading'       => 'Carregando…',

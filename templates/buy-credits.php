@@ -1,4 +1,4 @@
-<div class="ag-client" data-ag-page="comprar-creditos">
+<?php echo AG_Theme::client_open('comprar-creditos'); ?>
     <div class="ag-header">
         <h2 class="ag-title">Comprar Créditos</h2>
         <p class="ag-subtitle">Adicione créditos à sua carteira</p>

@@ -1,5 +1,6 @@
-<div class="ag-client" data-ag-page="login">
-    <div class="ag-card ag-card--narrow">
+<?php echo AG_Theme::client_open('login'); ?>
+    <div class="ag-auth-page">
+    <div class="ag-card ag-card--auth">
         <h2 class="ag-title">Entrar</h2>
         <p class="ag-subtitle">Acesse sua conta ArenaGamer</p>
 
@@ -17,6 +18,7 @@
             <button type="submit" class="ag-btn ag-btn--primary ag-btn--block">Entrar</button>
         </form>
 
-        <p class="ag-footer-link">Não tem conta? <a href="#" data-ag-link="cadastro">Cadastre-se</a></p>
+        <p class="ag-footer-link">Não tem conta? <a href="<?php echo esc_url(AG_Pages::resolved_url('cadastro')); ?>" data-ag-link="cadastro">Cadastre-se</a></p>
+    </div>
     </div>
 </div>

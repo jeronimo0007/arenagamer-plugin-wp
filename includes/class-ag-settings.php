@@ -15,21 +15,23 @@ class AG_Settings {
 
     public static function get(): array {
         $defaults = [
-            'api_url'       => 'http://localhost:8080',
-            'catalog_email' => '',
-            'catalog_pass'  => '',
-            'login_url'     => '',
-            'home_url'      => '',
-            'dashboard_url'   => '',
-            'tournament_url'  => '',
-            'torneios_url'    => '',
-            'participando_url'=> '',
-            'carteira_url'    => '',
-            'credit_packages' => "10\n25\n50\n100",
+            'api_url'          => 'http://localhost:8080',
+            'catalog_email'    => '',
+            'catalog_pass'     => '',
+            'login_url'        => '',
+            'cadastro_url'     => '',
+            'home_url'         => '',
+            'dashboard_url'    => '',
+            'tournament_url'   => '',
+            'torneios_url'     => '',
+            'participando_url' => '',
+            'carteira_url'     => '',
+            'credit_packages'  => "10\n25\n50\n100",
         ];
 
         $saved = get_option(self::OPTION_KEY, []);
         $parsed = wp_parse_args(is_array($saved) ? $saved : [], $defaults);
+        $parsed = AG_Pages::apply_url_defaults($parsed);
 
         if (!empty($parsed['tournament_url'])) {
             $parsed['tournament_url'] = AG_Rewrites::normalize_tournament_page_url($parsed['tournament_url']);
@@ -60,8 +62,9 @@ class AG_Settings {
             'api_url'         => esc_url_raw(rtrim($input['api_url'] ?? '', '/')),
             'catalog_email'   => sanitize_email($input['catalog_email'] ?? ''),
             'catalog_pass'    => sanitize_text_field($input['catalog_pass'] ?? ''),
-            'login_url'       => esc_url_raw($input['login_url'] ?? ''),
-            'home_url'        => esc_url_raw($input['home_url'] ?? ''),
+            'login_url'        => esc_url_raw($input['login_url'] ?? ''),
+            'cadastro_url'     => esc_url_raw($input['cadastro_url'] ?? ''),
+            'home_url'         => esc_url_raw($input['home_url'] ?? ''),
             'dashboard_url'   => esc_url_raw($input['dashboard_url'] ?? ''),
             'tournament_url'  => AG_Rewrites::normalize_tournament_page_url($input['tournament_url'] ?? ''),
             'torneios_url'    => esc_url_raw($input['torneios_url'] ?? ''),
@@ -111,7 +114,15 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_login_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[login_url]"
                                    value="<?php echo esc_attr($settings['login_url']); ?>" class="regular-text">
-                            <p class="description">Redirecionamento quando o usuário não estiver autenticado.</p>
+                            <p class="description">Opcional se existir página <strong>Login</strong> com <code>[pagina login]</code>. Redirecionamento quando o usuário não estiver autenticado.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ag_cadastro_url">URL da página de cadastro</label></th>
+                        <td>
+                            <input type="url" id="ag_cadastro_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[cadastro_url]"
+                                   value="<?php echo esc_attr($settings['cadastro_url']); ?>" class="regular-text">
+                            <p class="description">Opcional se existir página <strong>Cadastro</strong> com <code>[pagina cadastro]</code>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -119,7 +130,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_home_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[home_url]"
                                    value="<?php echo esc_attr($settings['home_url']); ?>" class="regular-text">
-                            <p class="description">Para onde ir após login/cadastro. Ex.: http://localhost/wordpress/area-cliente/</p>
+                            <p class="description">Opcional se existir página <strong>Painel do Jogador</strong> (<code>painel-jogador</code>) com <code>[pagina painel]</code>. Para onde ir após login/cadastro.</p>
                         </td>
                     </tr>
                     <tr>
@@ -127,7 +138,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_tournament_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[tournament_url]"
                                    value="<?php echo esc_attr($settings['tournament_url']); ?>" class="regular-text">
-                            <p class="description">Página com <code>[arenagamer_torneio]</code>. Ex.: http://localhost/wordpress/detalhes-toneio/ — links: <code>/detalhes-toneio/slug=nome</code>. Após alterar, salve em <strong>Configurações → Links permanentes</strong>.</p>
+                            <p class="description">Opcional se existir página <strong>Detalhes do Torneio</strong> com <code>[pagina torneio]</code>. Links: <code>/detalhes-torneio/slug=nome</code>. Após alterar, salve em <strong>Configurações → Links permanentes</strong>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -135,7 +146,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_torneios_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[torneios_url]"
                                    value="<?php echo esc_attr($settings['torneios_url']); ?>" class="regular-text">
-                            <p class="description">Atalho do painel. Ex.: http://localhost/wordpress/torneios/</p>
+                            <p class="description">Opcional se existir página <strong>Descobrir Torneios</strong> (<code>descobrir-torneios</code>) com <code>[pagina torneios]</code>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -143,6 +154,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_participando_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[participando_url]"
                                    value="<?php echo esc_attr($settings['participando_url']); ?>" class="regular-text">
+                            <p class="description">Opcional se existir página <strong>Participando</strong> com <code>[pagina participando]</code>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -150,6 +162,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_carteira_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[carteira_url]"
                                    value="<?php echo esc_attr($settings['carteira_url']); ?>" class="regular-text">
+                            <p class="description">Opcional se existir página <strong>Carteira</strong> com <code>[pagina creditos]</code>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -163,6 +176,26 @@ class AG_Settings {
                 </table>
                 <?php submit_button(); ?>
             </form>
+
+            <hr>
+            <h2>Padrão de páginas no WordPress</h2>
+            <p>Crie páginas com estes <strong>títulos</strong> e insira o shortcode indicado. O plugin encontra as URLs automaticamente (as URLs acima são opcionais e servem como override).</p>
+            <table class="widefat striped">
+                <thead>
+                    <tr>
+                        <th>Título da página</th>
+                        <th>Shortcode</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach (AG_Pages::setup_guide() as $page) : ?>
+                    <tr>
+                        <td><strong><?php echo esc_html($page['title']); ?></strong> <code>(slug: <?php echo esc_html($page['slug']); ?>)</code></td>
+                        <td><code><?php echo esc_html($page['shortcode']); ?></code></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
 
             <hr>
             <h2>Shortcodes disponíveis</h2>

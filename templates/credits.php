@@ -1,4 +1,4 @@
-<div class="ag-client" data-ag-page="creditos">
+<?php echo AG_Theme::client_open('creditos'); ?>
     <div class="ag-header">
         <h2 class="ag-title">Meus Créditos</h2>
         <p class="ag-subtitle">Saldo da carteira e histórico</p>

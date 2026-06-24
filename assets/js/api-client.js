@@ -23,6 +23,41 @@
         }
     }
 
+    function dedupeErrorMessage(message) {
+        const text = String(message || '').trim();
+        if (!text) return text;
+        const parts = text.split(/[,;]\s*/).map((s) => s.trim()).filter(Boolean);
+        const unique = [...new Set(parts)];
+        if (unique.length === 1 && parts.length > 1) {
+            const single = unique[0];
+            if (/em branco|obrigat[oó]ri|required|must not be null|must not be blank/i.test(single)) {
+                return 'Preencha todos os campos obrigatórios.';
+            }
+            return single;
+        }
+        return unique.join(', ');
+    }
+
+    function formatApiErrorData(data) {
+        if (!data) return '';
+        if (typeof data === 'string') return dedupeErrorMessage(data);
+
+        const nested = data.data;
+        if (typeof nested === 'string') return dedupeErrorMessage(nested);
+
+        const errors = data.errors || nested?.errors || data.validationErrors || nested?.validationErrors;
+        if (Array.isArray(errors) && errors.length) {
+            const msgs = errors.map((e) => {
+                if (typeof e === 'string') return e;
+                return e.message || e.defaultMessage || '';
+            }).filter(Boolean);
+            return dedupeErrorMessage(msgs.join(', '));
+        }
+
+        const msg = data.message || nested?.message || '';
+        return dedupeErrorMessage(msg);
+    }
+
     class ArenaGamerAPI {
         constructor(config) {
             this.ajaxUrl = config.ajaxUrl || '';
@@ -93,6 +128,10 @@
             formData.append('path', path);
             formData.append('method', options.method || 'GET');
 
+            if (options.query && typeof options.query === 'object') {
+                formData.append('query', JSON.stringify(options.query));
+            }
+
             if (options.body !== undefined) {
                 formData.append('body', JSON.stringify(options.body));
             }
@@ -133,7 +172,7 @@
             }
 
             if (!json || !json.success) {
-                const message = (typeof json?.data === 'string' ? json.data : json?.data?.message)
+                const message = formatApiErrorData(json?.data)
                     || cfg.i18n?.error
                     || 'Erro na requisição';
                 const err = new Error(message);
@@ -185,6 +224,113 @@
             });
         }
 
+        normalizeNicknameAvailability(res) {
+            let node = res;
+            for (let depth = 0; depth < 6 && node != null; depth++) {
+                if (typeof node === 'boolean') {
+                    return { nickname: '', available: node };
+                }
+                if (typeof node.available === 'boolean') {
+                    return {
+                        nickname: String(node.nickname || ''),
+                        available: node.available,
+                    };
+                }
+                if (typeof node.isAvailable === 'boolean') {
+                    return {
+                        nickname: String(node.nickname || ''),
+                        available: node.isAvailable,
+                    };
+                }
+                if (node.available === 'true' || node.available === 'false') {
+                    return {
+                        nickname: String(node.nickname || ''),
+                        available: node.available === 'true',
+                    };
+                }
+                if (node.available === 1 || node.available === 0) {
+                    return {
+                        nickname: String(node.nickname || ''),
+                        available: !!node.available,
+                    };
+                }
+                if (typeof node.taken === 'boolean') {
+                    return {
+                        nickname: String(node.nickname || ''),
+                        available: !node.taken,
+                    };
+                }
+                if (node.data !== undefined) {
+                    node = node.data;
+                    continue;
+                }
+                break;
+            }
+            return null;
+        }
+
+        checkNicknameAvailable(nickname, options = {}) {
+            const value = String(nickname || '').replace(/[^a-zA-Z0-9]/g, '');
+            const authenticated = !!options.authenticated;
+            const path = authenticated
+                ? '/api/v1/common/users/nickname-available'
+                : '/api/v1/public/auth/nickname-available';
+            return this.request(path, {
+                auth: authenticated ? undefined : false,
+                query: { nickname: value },
+            }).then((res) => {
+                const normalized = this.normalizeNicknameAvailability(res);
+                if (!normalized) {
+                    throw new Error('Resposta inválida ao verificar nickname.');
+                }
+                return normalized;
+            });
+        }
+
+        getPublicPlayer(clientUserId) {
+            return this.request(
+                `/api/v1/public/players/${encodeURIComponent(clientUserId)}`,
+                { auth: false }
+            );
+        }
+
+        getPlayer(clientUserId) {
+            return this.request(`/api/v1/common/players/${encodeURIComponent(clientUserId)}`);
+        }
+
+        normalizeTimeHHmm(value) {
+            if (value === null || value === undefined || value === '') return '';
+            const match = String(value).trim().match(/^(\d{1,2}):(\d{2})/);
+            if (!match) return '';
+            const hours = String(Math.min(23, Math.max(0, parseInt(match[1], 10)))).padStart(2, '0');
+            const minutes = String(Math.min(59, Math.max(0, parseInt(match[2], 10)))).padStart(2, '0');
+            return `${hours}:${minutes}`;
+        }
+
+        normalizeWeeklySlots(slots) {
+            const allowed = new Set([
+                'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY',
+            ]);
+            return (Array.isArray(slots) ? slots : [])
+                .map((slot) => ({
+                    dayOfWeek: String(slot?.dayOfWeek || '').trim().toUpperCase(),
+                    startTime: this.normalizeTimeHHmm(slot?.startTime),
+                    endTime: this.normalizeTimeHHmm(slot?.endTime),
+                }))
+                .filter((slot) => (
+                    allowed.has(slot.dayOfWeek)
+                    && slot.startTime
+                    && slot.endTime
+                    && slot.startTime < slot.endTime
+                ));
+        }
+
+        normalizeAvailability(availability) {
+            return {
+                weeklySlots: this.normalizeWeeklySlots(availability?.weeklySlots),
+            };
+        }
+
         getProfile() {
             return this.request('/api/v1/common/users/me').then((res) => {
                 const user = res.data || res;
@@ -198,7 +344,7 @@
         updateProfile(data) {
             return this.request('/api/v1/common/users/me', {
                 method: 'PUT',
-                body: data,
+                body: this.normalizeProfilePayload(data),
             }).then((res) => {
                 const user = res.data || res;
                 if (user && user.email) {
@@ -206,6 +352,27 @@
                 }
                 return res;
             });
+        }
+
+        normalizeProfilePayload(data) {
+            const payload = {
+                firstName: String(data.firstName || '').trim(),
+                lastName: String(data.lastName || '').trim(),
+                phoneNumber: String(data.phoneNumber || '').trim(),
+            };
+            if (data.nickname) {
+                payload.nickname = String(data.nickname).replace(/[^a-zA-Z0-9]/g, '');
+            }
+            ['avatarUrl', 'instagramUrl', 'youtubeUrl', 'twitchUrl'].forEach((field) => {
+                if (data[field] !== undefined) {
+                    const value = String(data[field] || '').trim();
+                    payload[field] = value || null;
+                }
+            });
+            if (data.availability !== undefined) {
+                payload.availability = this.normalizeAvailability(data.availability);
+            }
+            return payload;
         }
 
         listPublicTournaments(page = 0, size = 20, filter = null) {
@@ -246,6 +413,48 @@
             return this.request(`/api/v1/common/tournaments/${encodeURIComponent(slug)}`);
         }
 
+        createTournament(body) {
+            return this.request('/api/v1/common/tournaments', {
+                method: 'POST',
+                body,
+            });
+        }
+
+        updateTournamentStatus(slug, status) {
+            return this.request(
+                `/api/v1/common/tournaments/${encodeURIComponent(slug)}/status?status=${encodeURIComponent(status)}`,
+                { method: 'PUT' }
+            );
+        }
+
+        getTournamentEntryFeeRevenue(slug, options = {}) {
+            const opts = options || {};
+            const query = {};
+            const clientUserId = opts.clientUserId;
+            if (clientUserId != null && clientUserId !== '') {
+                query.clientUserId = clientUserId;
+            }
+            return this.request(
+                `/api/v1/common/tournaments/${encodeURIComponent(slug)}/entry-fees/revenue`,
+                { query }
+            );
+        }
+
+        listTournamentParticipants(slug, options = {}) {
+            const opts = options || {};
+            const status = opts.status ? String(opts.status).trim() : '';
+            const query = status ? { status } : undefined;
+            const usePublic = opts.public === true;
+            const path = usePublic
+                ? `/api/v1/public/tournaments/${encodeURIComponent(slug)}/participants`
+                : `/api/v1/common/tournaments/${encodeURIComponent(slug)}/participants`;
+            const catalogOnly = usePublic && !this.isLoggedIn();
+            return this.request(path, {
+                auth: catalogOnly ? false : undefined,
+                query,
+            });
+        }
+
         joinTournament(slug, data = {}) {
             return this.request(`/api/v1/common/tournaments/${encodeURIComponent(slug)}/participants`, {
                 method: 'POST',
@@ -253,10 +462,43 @@
             });
         }
 
-        joinTournamentTeam(slug, teamId) {
+        joinTournamentTeam(slug, body) {
             return this.request(`/api/v1/common/tournaments/${encodeURIComponent(slug)}/participants/team`, {
                 method: 'POST',
-                body: { teamId },
+                body: this.normalizeTeamJoinPayload(body),
+            });
+        }
+
+        normalizeTeamJoinPayload(body) {
+            const raw = typeof body === 'object' && body !== null ? body : { teamId: body };
+            const teamId = Number(raw.teamId);
+            const payload = { teamId };
+
+            const ids = (Array.isArray(raw.playerClientUserIds) ? raw.playerClientUserIds : [])
+                .map((id) => Number(id))
+                .filter((id) => Number.isFinite(id) && id > 0);
+            if (ids.length) {
+                payload.playerClientUserIds = [...new Set(ids)];
+                return payload;
+            }
+
+            const nicknames = (Array.isArray(raw.playerNicknames) ? raw.playerNicknames : [])
+                .map((nick) => String(nick || '').trim())
+                .filter(Boolean);
+            if (nicknames.length) {
+                payload.playerNicknames = [...new Set(nicknames)];
+            }
+
+            return payload;
+        }
+
+        withdrawTournamentRegistration(slug, options = {}) {
+            const opts = options || {};
+            const teamId = opts.teamId != null ? Number(opts.teamId) : null;
+            const query = Number.isFinite(teamId) && teamId > 0 ? { teamId } : undefined;
+            return this.request(`/api/v1/common/tournaments/${encodeURIComponent(slug)}/registration`, {
+                method: 'DELETE',
+                query,
             });
         }
 
@@ -290,28 +532,229 @@
             return this.request('/api/v1/common/teams/my');
         }
 
-        getTeam(id) {
-            return this.request(`/api/v1/common/teams/${encodeURIComponent(id)}`);
+        listManageableTeams() {
+            return this.request('/api/v1/common/teams/manageable');
+        }
+
+        getTeamSettings() {
+            return this.request('/api/v1/public/team-settings', { auth: false });
+        }
+
+        listPresets(page = 0, size = 100) {
+            return this.request(`/api/v1/public/presets?page=${page}&size=${size}`, { auth: false });
+        }
+
+        getTeam(id, presetId) {
+            let path = `/api/v1/common/teams/${encodeURIComponent(id)}`;
+            if (presetId) path += `?presetId=${encodeURIComponent(presetId)}`;
+            return this.request(path);
+        }
+
+        getTeamManage(id) {
+            return this.request(`/api/v1/common/teams/${encodeURIComponent(id)}/manage`);
+        }
+
+        getTeamMembers(id) {
+            return this.request(`/api/v1/common/teams/${encodeURIComponent(id)}/members`);
         }
 
         createTeam(data) {
             return this.request('/api/v1/common/teams', {
                 method: 'POST',
-                body: data,
+                body: this.normalizeTeamPayload(data),
             });
         }
 
         updateTeam(id, data) {
             return this.request(`/api/v1/common/teams/${encodeURIComponent(id)}`, {
                 method: 'PUT',
-                body: data,
+                body: this.normalizeTeamPayload(data, true),
             });
         }
 
-        removeTeamMember(teamId, contactId) {
-            return this.request(`/api/v1/common/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(contactId)}`, {
+        deleteTeam(id) {
+            return this.request(`/api/v1/common/teams/${encodeURIComponent(id)}`, {
                 method: 'DELETE',
             });
+        }
+
+        normalizeMemberClientUserId(value) {
+            const id = String(value ?? '').trim();
+            if (!/^\d+$/.test(id) || id === '0') {
+                return null;
+            }
+            return id;
+        }
+
+        normalizeTeamId(value) {
+            const id = String(value ?? '').trim();
+            if (!/^\d+$/.test(id) || id === '0') {
+                return null;
+            }
+            return id;
+        }
+
+        memberClientPath(teamId, clientUserId) {
+            const team = this.normalizeTeamId(teamId);
+            const client = this.normalizeMemberClientUserId(clientUserId);
+            if (!team || !client) {
+                throw new Error('ID do time ou jogador inválido.');
+            }
+            return `/api/v1/common/teams/${encodeURIComponent(team)}/members/clients/${encodeURIComponent(client)}`;
+        }
+
+        addTeamMember(teamId, clientUserId) {
+            return this.request(this.memberClientPath(teamId, clientUserId), { method: 'POST' });
+        }
+
+        removeTeamMember(teamId, clientUserId) {
+            try {
+                return this.request(this.memberClientPath(teamId, clientUserId), { method: 'DELETE' });
+            } catch (err) {
+                return Promise.reject(err);
+            }
+        }
+
+        transferTeamOwnership(teamId, newClientUserId) {
+            const team = this.normalizeTeamId(teamId);
+            const client = this.normalizeMemberClientUserId(newClientUserId);
+            if (!team || !client) {
+                return Promise.reject(new Error('ID do time ou jogador inválido.'));
+            }
+            return this.request(
+                `/api/v1/common/teams/${encodeURIComponent(team)}/transfer/clients/${encodeURIComponent(client)}`,
+                { method: 'POST' }
+            );
+        }
+
+        setTeamCaptain(teamId, clientUserId) {
+            try {
+                return this.request(`${this.memberClientPath(teamId, clientUserId)}/captain`, { method: 'POST' });
+            } catch (err) {
+                return Promise.reject(err);
+            }
+        }
+
+        normalizeTeamPayload(data, isUpdate) {
+            const payload = {
+                name: String(data.name || '').trim(),
+                tag: String(data.tag || '').trim(),
+                logoUrl: String(data.logoUrl || '').trim(),
+                bannerUrl: String(data.bannerUrl || '').trim(),
+                youtubeUrl: String(data.youtubeUrl || '').trim(),
+                instagramUrl: String(data.instagramUrl || '').trim(),
+                twitchUrl: String(data.twitchUrl || '').trim(),
+                otherSocialUrl: String(data.otherSocialUrl || '').trim(),
+                description: String(data.description || '').trim(),
+                visibility: data.visibility || 'PUBLIC',
+            };
+
+            ['tag', 'logoUrl', 'bannerUrl', 'youtubeUrl', 'instagramUrl', 'twitchUrl', 'otherSocialUrl', 'description'].forEach((field) => {
+                if (payload[field] === '') payload[field] = null;
+            });
+
+            if (data.ranks !== undefined) {
+                if (Array.isArray(data.ranks) && data.ranks.length) {
+                    payload.ranks = data.ranks
+                        .map((r) => ({
+                            presetId: Number(r.presetId),
+                            rankPoints: Number(r.rankPoints),
+                        }))
+                        .filter((r) => r.presetId > 0 && !Number.isNaN(r.rankPoints) && r.rankPoints >= 0);
+                } else {
+                    payload.ranks = [];
+                }
+            }
+
+            if (data.availability !== undefined) {
+                payload.availability = this.normalizeAvailability(data.availability);
+            }
+
+            return payload;
+        }
+
+        requestTeamAvailabilityChange(teamId, weeklySlots, message) {
+            const body = {
+                weeklySlots: this.normalizeWeeklySlots(weeklySlots),
+            };
+            const note = String(message || '').trim();
+            if (note) body.message = note;
+            return this.request(
+                `/api/v1/common/teams/${encodeURIComponent(teamId)}/availability/change-requests`,
+                { method: 'POST', body }
+            );
+        }
+
+        listTeamAvailabilityChangeRequests(teamId, pendingOnly = true) {
+            const flag = pendingOnly ? 'true' : 'false';
+            return this.request(
+                `/api/v1/common/teams/${encodeURIComponent(teamId)}/availability/change-requests?pendingOnly=${flag}`
+            );
+        }
+
+        approveTeamAvailabilityChange(teamId, requestId) {
+            return this.request(
+                `/api/v1/common/teams/${encodeURIComponent(teamId)}/availability/change-requests/${encodeURIComponent(requestId)}/approve`,
+                { method: 'POST' }
+            );
+        }
+
+        rejectTeamAvailabilityChange(teamId, requestId) {
+            return this.request(
+                `/api/v1/common/teams/${encodeURIComponent(teamId)}/availability/change-requests/${encodeURIComponent(requestId)}/reject`,
+                { method: 'POST' }
+            );
+        }
+
+        async uploadMedia(file, context) {
+            if (!file) {
+                throw new Error('Nenhum arquivo selecionado.');
+            }
+            if (!this.ajaxUrl) {
+                throw new Error('Plugin não configurado corretamente (ajaxUrl ausente).');
+            }
+
+            const formData = new FormData();
+            formData.append('action', 'arenagamer_upload_media');
+            formData.append('nonce', this.nonce);
+            formData.append('context', context || 'team');
+            formData.append('file', file);
+
+            const auth = getStoredAuth();
+            if (auth?.accessToken) {
+                formData.append('token', auth.accessToken);
+            }
+
+            let response;
+            try {
+                response = await fetch(this.ajaxUrl, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin',
+                });
+            } catch (e) {
+                throw new Error('Erro de rede ao enviar arquivo.');
+            }
+
+            const rawText = await response.text();
+            let json;
+            try {
+                json = rawText ? JSON.parse(rawText) : null;
+            } catch (e) {
+                throw new Error('Resposta inválida do servidor.');
+            }
+
+            if (!json || !json.success) {
+                const message = (typeof json?.data === 'string' ? json.data : json?.data?.message)
+                    || 'Erro ao enviar arquivo';
+                throw new Error(message);
+            }
+
+            const url = json.data?.url || json.data?.data?.url;
+            if (!url) {
+                throw new Error('URL do arquivo não retornada.');
+            }
+            return url;
         }
     }
 

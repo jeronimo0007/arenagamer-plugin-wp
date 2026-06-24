@@ -1,4 +1,4 @@
-<div class="ag-client" data-ag-page="menu">
+<?php echo AG_Theme::client_open('menu'); ?>
     <nav class="ag-nav" data-ag-nav hidden>
         <span class="ag-nav__user" data-ag-nav-user></span>
         <a href="#" class="ag-nav__link">Inscrições abertas</a>

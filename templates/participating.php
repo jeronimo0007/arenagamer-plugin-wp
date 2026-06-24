@@ -10,7 +10,7 @@ $tabs = [
 $active_view = $ag_view ?? 'meus-torneios';
 $is_partidas = ($active_view === 'partidas');
 ?>
-<div class="ag-client ag-client--roda" data-ag-page="participando" data-ag-view="<?php echo esc_attr($active_view); ?>">
+<?php echo AG_Theme::client_open('participando', ['data-ag-view' => $active_view]); ?>
     <div class="ag-header">
         <h2 class="ag-title"><?php echo esc_html($ag_title ?? 'Participando'); ?></h2>
         <?php if (!empty($ag_subtitle)) : ?>

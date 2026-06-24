@@ -11,6 +11,7 @@ class AG_Api_Proxy {
         '/api/v1/public/tournaments',
         '/api/v1/public/presets',
         '/api/v1/public/tournament-pricing',
+        '/api/v1/public/team-settings',
     ];
 
     public static function init(): void {
@@ -28,9 +29,17 @@ class AG_Api_Proxy {
             wp_send_json_error(['message' => 'URL da API não configurada. Vá em Configurações → ArenaGamer Cliente.'], 500);
         }
 
-        $path = sanitize_text_field(wp_unslash($_POST['path'] ?? ''));
-        if ($path === '' || strpos($path, '/api/v1/') !== 0) {
+        $path = self::sanitize_api_path(wp_unslash($_POST['path'] ?? ''));
+        if ($path === '') {
             wp_send_json_error(['message' => 'Caminho da API inválido.'], 400);
+        }
+
+        $query_raw = wp_unslash($_POST['query'] ?? '');
+        if ($query_raw !== '') {
+            $query = json_decode($query_raw, true);
+            if (is_array($query) && $query !== []) {
+                $path .= (strpos($path, '?') !== false ? '&' : '?') . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+            }
         }
 
         $method = strtoupper(sanitize_text_field(wp_unslash($_POST['method'] ?? 'GET')));
@@ -77,16 +86,29 @@ class AG_Api_Proxy {
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
 
-        if (!is_array($data)) {
-            wp_send_json_error(['message' => 'Resposta inválida da API.'], 502);
-        }
-
         if ($status >= 400) {
+            if (!is_array($data)) {
+                wp_send_json_error([
+                    'message' => 'Erro na API',
+                    'status'  => $status,
+                ], $status);
+            }
             wp_send_json_error([
                 'message' => $data['message'] ?? 'Erro na API',
                 'code'    => $data['code'] ?? null,
                 'data'    => $data,
             ], $status);
+        }
+
+        if (!is_array($data)) {
+            if ($body === '' || trim($body) === '') {
+                $data = [
+                    'success' => true,
+                    'message' => 'Operação realizada com sucesso',
+                ];
+            } else {
+                wp_send_json_error(['message' => 'Resposta inválida da API.'], 502);
+            }
         }
 
         wp_send_json_success($data);
@@ -97,6 +119,29 @@ class AG_Api_Proxy {
             return false;
         }
         $base = strtok($path, '?');
-        return in_array($base, self::CATALOG_PATHS, true);
+        if (in_array($base, self::CATALOG_PATHS, true)) {
+            return true;
+        }
+
+        return (bool) preg_match('#^/api/v1/public/players/[^/]+$#', $base)
+            || (bool) preg_match('#^/api/v1/public/tournaments/[^/]+/participants$#', $base);
+    }
+
+    private static function sanitize_api_path(string $path): string {
+        $path = trim($path);
+        if ($path === '' || strpos($path, '/api/v1/') !== 0) {
+            return '';
+        }
+
+        $path_only = strtok($path, '?') ?: $path;
+        if ($path_only === '' || strpos($path_only, '/api/v1/') !== 0) {
+            return '';
+        }
+
+        if (preg_match('#[\s<>]#', $path)) {
+            return '';
+        }
+
+        return $path;
     }
 }
