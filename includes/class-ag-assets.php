@@ -64,7 +64,12 @@ class AG_Assets {
         wp_localize_script('arenagamer-cliente-api', 'ArenaGamerConfig', [
             'ajaxUrl'        => admin_url('admin-ajax.php'),
             'nonce'          => wp_create_nonce('arenagamer_api'),
-            'apiUrl'         => $settings['api_url'],
+            'apiUrls'        => [
+                'auth'   => $settings['auth_url'] ?? '',
+                'public' => $settings['public_url'] ?? '',
+                'common' => $settings['common_url'] ?? '',
+                'admin'  => $settings['admin_url'] ?? '',
+            ],
             'loginUrl'       => $page_urls['login'] ?? $settings['login_url'],
             'cadastroUrl'    => $page_urls['cadastro'] ?? '',
             'dashboardUrl'   => $page_urls['dashboard'] ?? ($page_urls['home'] ?? ''),
@@ -78,7 +83,7 @@ class AG_Assets {
                 'loginRequired' => 'Faça login para continuar.',
                 'noData'        => 'Nenhum registro encontrado.',
                 'success'       => 'Operação realizada com sucesso!',
-                'apiDown'       => 'API indisponível. Verifique se o servidor ArenaGamer está rodando na porta 8080.',
+                'apiDown'       => 'API indisponível. Verifique se os serviços ArenaGamer estão acessíveis.',
             ],
         ]);
     }
@@ -101,7 +106,7 @@ class AG_Assets {
             return true;
         }
 
-        if (strpos($content, '[pagina ') !== false) {
+        if (strpos($content, '[pagina_') !== false || strpos($content, '[pagina ') !== false) {
             return true;
         }
 

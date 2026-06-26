@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('AG_CLIENTE_VERSION', '1.14.3');
+define('AG_CLIENTE_VERSION', '1.19.0');
 define('AG_CLIENTE_PATH', plugin_dir_path(__FILE__));
 define('AG_CLIENTE_URL', plugin_dir_url(__FILE__));
 

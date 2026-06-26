@@ -15,7 +15,10 @@ class AG_Settings {
 
     public static function get(): array {
         $defaults = [
-            'api_url'          => 'http://localhost:8080',
+            'auth_url'         => 'https://auth.omnyarena.com',
+            'public_url'       => 'https://public.omnyarena.com',
+            'common_url'       => 'https://common.omnyarena.com',
+            'admin_url'        => 'https://admin.omnyarena.com',
             'catalog_email'    => '',
             'catalog_pass'     => '',
             'login_url'        => '',
@@ -59,7 +62,10 @@ class AG_Settings {
 
     public static function sanitize($input): array {
         return [
-            'api_url'         => esc_url_raw(rtrim($input['api_url'] ?? '', '/')),
+            'auth_url'        => esc_url_raw(rtrim($input['auth_url'] ?? '', '/')),
+            'public_url'      => esc_url_raw(rtrim($input['public_url'] ?? '', '/')),
+            'common_url'      => esc_url_raw(rtrim($input['common_url'] ?? '', '/')),
+            'admin_url'       => esc_url_raw(rtrim($input['admin_url'] ?? '', '/')),
             'catalog_email'   => sanitize_email($input['catalog_email'] ?? ''),
             'catalog_pass'    => sanitize_text_field($input['catalog_pass'] ?? ''),
             'login_url'        => esc_url_raw($input['login_url'] ?? ''),
@@ -87,11 +93,40 @@ class AG_Settings {
                 <?php settings_fields('arenagamer_cliente_group'); ?>
                 <table class="form-table" role="presentation">
                     <tr>
-                        <th scope="row"><label for="ag_api_url">URL da API</label></th>
+                        <th colspan="2"><h2 style="margin:0;">Microsserviços (URLs base)</h2>
+                            <p class="description" style="font-weight:normal;">A API foi dividida em serviços independentes, cada um com seu próprio domínio. O plugin roteia cada requisição automaticamente para o serviço correto conforme o caminho.</p>
+                        </th>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ag_auth_url">URL — Auth</label></th>
                         <td>
-                            <input type="url" id="ag_api_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[api_url]"
-                                   value="<?php echo esc_attr($settings['api_url']); ?>" class="regular-text" required>
-                            <p class="description">Ex.: http://localhost:8080 ou https://api.seudominio.com</p>
+                            <input type="url" id="ag_auth_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[auth_url]"
+                                   value="<?php echo esc_attr($settings['auth_url']); ?>" class="regular-text" required>
+                            <p class="description">Autenticação, sessão e perfil do usuário: <code>/api/v1/public/auth/*</code>, <code>/api/v1/common/auth/*</code>, <code>/api/v1/common/users/*</code>.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ag_public_url">URL — Public</label></th>
+                        <td>
+                            <input type="url" id="ag_public_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[public_url]"
+                                   value="<?php echo esc_attr($settings['public_url']); ?>" class="regular-text" required>
+                            <p class="description">Catálogo público (HTTP Basic Auth): <code>/api/v1/public/*</code> (exceto <code>/auth</code>).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ag_common_url">URL — Common</label></th>
+                        <td>
+                            <input type="url" id="ag_common_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[common_url]"
+                                   value="<?php echo esc_attr($settings['common_url']); ?>" class="regular-text" required>
+                            <p class="description">Torneios, times, carteira, jogadores, presets, assinaturas: <code>/api/v1/common/*</code> (exceto <code>/auth</code> e <code>/users</code>).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ag_admin_url">URL — Admin</label></th>
+                        <td>
+                            <input type="url" id="ag_admin_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[admin_url]"
+                                   value="<?php echo esc_attr($settings['admin_url']); ?>" class="regular-text">
+                            <p class="description">Operações administrativas: <code>/api/v1/admin/*</code>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -114,7 +149,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_login_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[login_url]"
                                    value="<?php echo esc_attr($settings['login_url']); ?>" class="regular-text">
-                            <p class="description">Opcional se existir página <strong>Login</strong> com <code>[pagina login]</code>. Redirecionamento quando o usuário não estiver autenticado.</p>
+                            <p class="description">Opcional se existir página <strong>Login</strong> com <code>[pagina_login]</code>. Redirecionamento quando o usuário não estiver autenticado.</p>
                         </td>
                     </tr>
                     <tr>
@@ -122,7 +157,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_cadastro_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[cadastro_url]"
                                    value="<?php echo esc_attr($settings['cadastro_url']); ?>" class="regular-text">
-                            <p class="description">Opcional se existir página <strong>Cadastro</strong> com <code>[pagina cadastro]</code>.</p>
+                            <p class="description">Opcional se existir página <strong>Cadastro</strong> com <code>[pagina_cadastro]</code>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -130,7 +165,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_home_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[home_url]"
                                    value="<?php echo esc_attr($settings['home_url']); ?>" class="regular-text">
-                            <p class="description">Opcional se existir página <strong>Painel do Jogador</strong> (<code>painel-jogador</code>) com <code>[pagina painel]</code>. Para onde ir após login/cadastro.</p>
+                            <p class="description">Opcional se existir página <strong>Painel do Jogador</strong> (<code>painel-jogador</code>) com <code>[pagina_painel]</code>. Para onde ir após login/cadastro.</p>
                         </td>
                     </tr>
                     <tr>
@@ -138,7 +173,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_tournament_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[tournament_url]"
                                    value="<?php echo esc_attr($settings['tournament_url']); ?>" class="regular-text">
-                            <p class="description">Opcional se existir página <strong>Detalhes do Torneio</strong> com <code>[pagina torneio]</code>. Links: <code>/detalhes-torneio/slug=nome</code>. Após alterar, salve em <strong>Configurações → Links permanentes</strong>.</p>
+                            <p class="description">Opcional se existir página <strong>Detalhes do Torneio</strong> com <code>[pagina_torneio]</code>. Links: <code>/detalhes-torneio/slug=nome</code>. Após alterar, salve em <strong>Configurações → Links permanentes</strong>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -146,7 +181,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_torneios_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[torneios_url]"
                                    value="<?php echo esc_attr($settings['torneios_url']); ?>" class="regular-text">
-                            <p class="description">Opcional se existir página <strong>Descobrir Torneios</strong> (<code>descobrir-torneios</code>) com <code>[pagina torneios]</code>.</p>
+                            <p class="description">Opcional se existir página <strong>Descobrir Torneios</strong> (<code>descobrir-torneios</code>) com <code>[pagina_torneios]</code>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -154,7 +189,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_participando_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[participando_url]"
                                    value="<?php echo esc_attr($settings['participando_url']); ?>" class="regular-text">
-                            <p class="description">Opcional se existir página <strong>Participando</strong> com <code>[pagina participando]</code>.</p>
+                            <p class="description">Opcional se existir página <strong>Participando</strong> com <code>[pagina_participando]</code>.</p>
                         </td>
                     </tr>
                     <tr>
@@ -162,7 +197,7 @@ class AG_Settings {
                         <td>
                             <input type="url" id="ag_carteira_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[carteira_url]"
                                    value="<?php echo esc_attr($settings['carteira_url']); ?>" class="regular-text">
-                            <p class="description">Opcional se existir página <strong>Carteira</strong> com <code>[pagina creditos]</code>.</p>
+                            <p class="description">Opcional se existir página <strong>Carteira</strong> com <code>[pagina_creditos]</code>.</p>
                         </td>
                     </tr>
                     <tr>

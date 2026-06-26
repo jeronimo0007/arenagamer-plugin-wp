@@ -506,14 +506,22 @@
             return this.request(`/api/v1/common/tournaments/${encodeURIComponent(slug)}/matches`);
         }
 
+        listStandings(slug) {
+            return this.request(`/api/v1/common/tournaments/${encodeURIComponent(slug)}/standings`);
+        }
+
         getBalance() {
             return this.request('/api/v1/common/wallet/balance');
         }
 
-        deposit(amount, description) {
-            return this.request('/api/v1/common/wallet/deposit', {
+        /**
+         * Compra de créditos. Não credita na hora — gera uma fatura no Perfex.
+         * Retorna CreditPurchaseResponse { invoiceId, credits, amount, paymentUrl, pending }.
+         */
+        purchaseCredits(amount) {
+            return this.request('/api/v1/common/wallet/credits/purchase', {
                 method: 'POST',
-                body: { amount, description },
+                body: { amount: Number(amount) },
             });
         }
 
@@ -607,12 +615,107 @@
             return this.request(this.memberClientPath(teamId, clientUserId), { method: 'POST' });
         }
 
+        /** Convite de jogador — POST cria TeamJoinRequestResponse com status PENDING. */
+        inviteTeamMember(teamId, clientUserId) {
+            return this.addTeamMember(teamId, clientUserId);
+        }
+
+        listTeamJoinRequests(teamId, pendingOnly) {
+            const team = this.normalizeTeamId(teamId);
+            if (!team) {
+                throw new Error('ID do time inválido.');
+            }
+            const onlyPending = pendingOnly !== false;
+            const qs = onlyPending ? '' : '?pendingOnly=false';
+            return this.request(`/api/v1/common/teams/${encodeURIComponent(team)}/join-requests${qs}`);
+        }
+
+        listReceivedJoinRequests() {
+            return this.request('/api/v1/common/teams/join-requests/received');
+        }
+
+        acceptTeamJoinRequest(requestId) {
+            const id = String(requestId ?? '').trim();
+            if (!/^\d+$/.test(id) || id === '0') {
+                throw new Error('Convite inválido.');
+            }
+            return this.request(
+                `/api/v1/common/teams/join-requests/${encodeURIComponent(id)}/accept`,
+                { method: 'POST' }
+            );
+        }
+
         removeTeamMember(teamId, clientUserId) {
             try {
                 return this.request(this.memberClientPath(teamId, clientUserId), { method: 'DELETE' });
             } catch (err) {
                 return Promise.reject(err);
             }
+        }
+
+        /** Membro sai do time (mesmo endpoint DELETE). */
+        leaveTeam(teamId, clientUserId) {
+            return this.removeTeamMember(teamId, clientUserId);
+        }
+
+        listTeamRosterVacancies(teamId, pendingOnly) {
+            const team = this.normalizeTeamId(teamId);
+            if (!team) {
+                throw new Error('ID do time inválido.');
+            }
+            const onlyPending = pendingOnly !== false;
+            const qs = onlyPending ? '?pendingOnly=true' : '?pendingOnly=false';
+            return this.request(`/api/v1/common/teams/${encodeURIComponent(team)}/roster-vacancies${qs}`);
+        }
+
+        fillRosterVacancy(teamId, vacancyId, clientUserId) {
+            const team = this.normalizeTeamId(teamId);
+            const vacancy = String(vacancyId ?? '').trim();
+            const client = this.normalizeMemberClientUserId(clientUserId);
+            if (!team || !/^\d+$/.test(vacancy) || !client) {
+                throw new Error('Dados da vaga inválidos.');
+            }
+            return this.request(
+                `/api/v1/common/teams/${encodeURIComponent(team)}/roster-vacancies/${encodeURIComponent(vacancy)}/fill`,
+                { method: 'POST', body: { clientUserId: Number(client) } }
+            );
+        }
+
+        forfeitRosterVacancy(teamId, vacancyId) {
+            const team = this.normalizeTeamId(teamId);
+            const vacancy = String(vacancyId ?? '').trim();
+            if (!team || !/^\d+$/.test(vacancy)) {
+                throw new Error('Vaga inválida.');
+            }
+            return this.request(
+                `/api/v1/common/teams/${encodeURIComponent(team)}/roster-vacancies/${encodeURIComponent(vacancy)}/forfeit`,
+                { method: 'POST' }
+            );
+        }
+
+        reallocateTeamRoster(teamId, payload) {
+            const team = this.normalizeTeamId(teamId);
+            if (!team) {
+                throw new Error('ID do time inválido.');
+            }
+            const tournamentSlug = String(payload?.tournamentSlug || '').trim();
+            const outId = this.normalizeMemberClientUserId(payload?.outClientUserId);
+            const inId = this.normalizeMemberClientUserId(payload?.inClientUserId);
+            if (!tournamentSlug || !outId || !inId) {
+                throw new Error('Informe torneio, jogador que sai e jogador que entra.');
+            }
+            return this.request(`/api/v1/common/teams/${encodeURIComponent(team)}/roster/reallocate`, {
+                method: 'POST',
+                body: {
+                    tournamentSlug,
+                    outClientUserId: Number(outId),
+                    inClientUserId: Number(inId),
+                },
+            });
+        }
+
+        getTeamJoinBanStatus() {
+            return this.request('/api/v1/common/teams/join-ban/status');
         }
 
         transferTeamOwnership(teamId, newClientUserId) {

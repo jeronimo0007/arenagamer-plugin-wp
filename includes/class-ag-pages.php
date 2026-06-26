@@ -11,18 +11,18 @@ if (!defined('ABSPATH')) {
  *
  * | Título WP              | Shortcode principal        |
  * |------------------------|----------------------------|
- * | Login                  | [pagina login]             |
- * | Cadastro               | [pagina cadastro]          |
- * | Painel do Jogador      | [pagina painel]            |
- * | Área do Cliente        | [pagina menu]              |
- * | Descobrir Torneios     | [pagina torneios]          |
- * | Participando           | [pagina participando]      |
- * | Carteira               | [pagina creditos]          |
- * | Times                  | [pagina times]             |
- * | Perfil                 | [pagina perfil]            |
- * | Perfil do Jogador      | [pagina jogador]           |
- * | Detalhes do Time       | [pagina time]              |
- * | Detalhes do Torneio    | [pagina torneio]           |
+ * | Login                  | [pagina_login]             |
+ * | Cadastro               | [pagina_cadastro]          |
+ * | Painel do Jogador      | [pagina_painel]            |
+ * | Área do Cliente        | [pagina_menu]              |
+ * | Descobrir Torneios     | [pagina_torneios]          |
+ * | Participando           | [pagina_participando]      |
+ * | Carteira               | [pagina_creditos]          |
+ * | Times                  | [pagina_times]             |
+ * | Perfil                 | [pagina_perfil]            |
+ * | Perfil do Jogador      | [pagina_jogador]           |
+ * | Detalhes do Time       | [pagina_time]              |
+ * | Detalhes do Torneio    | [pagina_torneio]           |
  */
 class AG_Pages {
 
@@ -55,19 +55,19 @@ class AG_Pages {
     /** @return array<int, array{title: string, slug: string, shortcode: string}> */
     public static function setup_guide(): array {
         return [
-            ['title' => 'Login',               'slug' => 'login',            'shortcode' => '[pagina login]'],
-            ['title' => 'Cadastro',            'slug' => 'cadastro',         'shortcode' => '[pagina cadastro]'],
-            ['title' => 'Painel do Jogador',   'slug' => 'painel-jogador',   'shortcode' => '[pagina painel]'],
-            ['title' => 'Área do Cliente',     'slug' => 'area-cliente',     'shortcode' => '[pagina menu]'],
-            ['title' => 'Descobrir Torneios',  'slug' => 'descobrir-torneios', 'shortcode' => '[pagina torneios]'],
-            ['title' => 'Participando',        'slug' => 'participando',     'shortcode' => '[pagina participando]'],
-            ['title' => 'Carteira',            'slug' => 'carteira',         'shortcode' => '[pagina creditos]'],
-            ['title' => 'Times',               'slug' => 'times',            'shortcode' => '[pagina times]'],
-            ['title' => 'Perfil',              'slug' => 'perfil',           'shortcode' => '[pagina perfil]'],
-            ['title' => 'Perfil do Jogador',   'slug' => 'jogador',          'shortcode' => '[pagina jogador]'],
-            ['title' => 'Detalhes do Time',    'slug' => 'time',             'shortcode' => '[pagina time]'],
-            ['title' => 'Detalhes do Torneio', 'slug' => 'detalhes-torneio', 'shortcode' => '[pagina torneio]'],
-            ['title' => 'Criar Torneio',       'slug' => 'criar-torneio',    'shortcode' => '[pagina criar torneio]'],
+            ['title' => 'Login',               'slug' => 'login',            'shortcode' => '[pagina_login]'],
+            ['title' => 'Cadastro',            'slug' => 'cadastro',         'shortcode' => '[pagina_cadastro]'],
+            ['title' => 'Painel do Jogador',   'slug' => 'painel-jogador',   'shortcode' => '[pagina_painel]'],
+            ['title' => 'Área do Cliente',     'slug' => 'area-cliente',     'shortcode' => '[pagina_menu]'],
+            ['title' => 'Descobrir Torneios',  'slug' => 'descobrir-torneios', 'shortcode' => '[pagina_torneios]'],
+            ['title' => 'Participando',        'slug' => 'participando',     'shortcode' => '[pagina_participando]'],
+            ['title' => 'Carteira',            'slug' => 'carteira',         'shortcode' => '[pagina_creditos]'],
+            ['title' => 'Times',               'slug' => 'times',            'shortcode' => '[pagina_times]'],
+            ['title' => 'Perfil',              'slug' => 'perfil',           'shortcode' => '[pagina_perfil]'],
+            ['title' => 'Perfil do Jogador',   'slug' => 'jogador',          'shortcode' => '[pagina_jogador]'],
+            ['title' => 'Detalhes do Time',    'slug' => 'time',             'shortcode' => '[pagina_time]'],
+            ['title' => 'Detalhes do Torneio', 'slug' => 'detalhes-torneio', 'shortcode' => '[pagina_torneio]'],
+            ['title' => 'Criar Torneio',       'slug' => 'criar-torneio',    'shortcode' => '[pagina_criar_torneio]'],
         ];
     }
 
@@ -242,8 +242,9 @@ class AG_Pages {
 
         if (
             str_contains($content, 'data-ag-page="torneio"')
-            || has_shortcode($content, 'pagina torneio')
+            || has_shortcode($content, 'pagina_torneio')
             || has_shortcode($content, 'arenagamer_torneio')
+            || str_contains($content, '[pagina torneio')
         ) {
             return $content;
         }

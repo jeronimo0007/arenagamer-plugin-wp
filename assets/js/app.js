@@ -18,11 +18,34 @@
     };
 
     const MATCH_STATUS = {
+        PENDING: 'Pendente',
         SCHEDULED: 'Agendada',
+        RESCHEDULED: 'Remarcada',
         IN_PROGRESS: 'Em jogo',
         COMPLETED: 'Finalizada',
-        CANCELLED: 'Cancelada',
         WALKOVER: 'W.O.',
+        CANCELLED: 'Cancelada',
+    };
+
+    const TIME_WINDOW_LABELS = {
+        MORNING: 'Manhã',
+        AFTERNOON: 'Tarde',
+        EVENING: 'Noite',
+        NIGHT: 'Madrugada',
+    };
+
+    const ROUND_TYPE_LABELS = {
+        FINAL: 'Final',
+        THIRD_PLACE: 'Disputa de 3º lugar',
+        SEMI_FINAL: 'Semifinal',
+        SEMIFINAL: 'Semifinal',
+        QUARTER_FINAL: 'Quartas de final',
+        QUARTERFINAL: 'Quartas de final',
+        ROUND_OF_16: 'Oitavas de final',
+        ROUND_OF_32: 'Fase de 32',
+        GROUP_STAGE: 'Fase de grupos',
+        GROUP: 'Fase de grupos',
+        REGULAR: 'Rodada',
     };
 
     const TYPE_LABELS = {
@@ -63,6 +86,535 @@
         'participando', 'meus-torneios', 'creditos', 'comprar-creditos', 'carteira',
         'partidas', 'times', 'time', 'perfil', 'painel', 'dashboard', 'criar-torneio',
     ];
+
+    const GLOBAL_BAR_POLL_MS = 10000;
+    const JOIN_REQUEST_STATUS_LABELS = {
+        PENDING: 'Pendente',
+        ACCEPTED: 'Aceito',
+        DECLINED: 'Recusado',
+        CANCELLED: 'Cancelado',
+    };
+
+    let globalBarPollTimer = null;
+    let globalBarEventsBound = false;
+    let cachedJoinBanStatus = null;
+
+    function walletPageUrl() {
+        const urls = cfg.pageUrls || {};
+        return String(urls.carteira || urls.creditos || urls['comprar-creditos'] || '').trim();
+    }
+
+    function dashboardPageUrl() {
+        const urls = cfg.pageUrls || {};
+        return String(cfg.dashboardUrl || urls.painel || urls.dashboard || urls.home || cfg.homeUrl || '').trim();
+    }
+
+    function homeIconSvg() {
+        return `<svg class="ag-global-bar__home-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>`;
+    }
+
+    function bellIconSvg() {
+        return `<svg class="ag-global-bar__bell-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Z" fill="currentColor"/>
+            <path d="M18 8.5V9a6 6 0 0 1-5 5.91V16a1 1 0 1 1-2 0v-1.09A6 6 0 0 1 6 9v-.5a6 6 0 1 1 12 0Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>`;
+    }
+
+    function ensureGlobalClientBar(root) {
+        if (!root || root.querySelector('[data-ag-global-bar]')) return;
+        if (!api.isLoggedIn()) return;
+        const page = root.dataset.agPage;
+        if (page === 'login' || page === 'cadastro') return;
+
+        const walletUrl = walletPageUrl();
+        const panelUrl = dashboardPageUrl();
+        const balanceInner = `
+                    <span class="ag-global-bar__balance-label">Saldo</span>
+                    <strong class="ag-global-bar__balance-value" data-ag-global-balance>—</strong>
+                    <span class="ag-global-bar__balance-unit">créditos</span>`;
+        const balanceHtml = walletUrl
+            ? `<a href="${escapeAttr(walletUrl)}" class="ag-global-bar__balance" data-ag-global-balance-wrap>${balanceInner}</a>`
+            : `<div class="ag-global-bar__balance ag-global-bar__balance--static" data-ag-global-balance-wrap>${balanceInner}</div>`;
+        const homeHtml = panelUrl
+            ? `<a href="${escapeAttr(panelUrl)}" class="ag-global-bar__home" aria-label="Painel do jogador" title="Painel">${homeIconSvg()}</a>`
+            : '';
+        const userName = navUserLabel(api.getUser());
+        const userHtml = userName
+            ? `<span class="ag-global-bar__user" data-ag-global-user>${escapeHtml(userName)}</span>`
+            : '';
+        const bar = document.createElement('div');
+        bar.className = 'ag-global-bar';
+        bar.dataset.agGlobalBar = '';
+        bar.innerHTML = `
+            <div class="ag-global-bar__actions">
+                <div class="ag-global-bar__group ag-global-bar__group--start">
+                    ${homeHtml}
+                    ${userHtml}
+                </div>
+                <div class="ag-global-bar__group ag-global-bar__group--end">
+                ${balanceHtml}
+                <div class="ag-global-bar__notify" data-ag-notify-wrap>
+                    <button type="button" class="ag-global-bar__bell" data-ag-notify-toggle aria-label="Notificações" aria-expanded="false">
+                        ${bellIconSvg()}
+                        <span class="ag-global-bar__badge" data-ag-notify-badge hidden>0</span>
+                    </button>
+                    <div class="ag-global-bar__notify-panel" data-ag-notify-panel hidden>
+                        <div class="ag-global-bar__notify-header">
+                            <span>Notificações</span>
+                            <span class="ag-muted ag-global-bar__notify-updated" data-ag-notify-updated></span>
+                        </div>
+                        <div class="ag-global-bar__notify-list" data-ag-notify-list>
+                            <p class="ag-muted ag-global-bar__notify-empty">Carregando…</p>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+            <div class="ag-global-bar__ban ag-alert ag-alert--error" data-ag-join-ban-banner hidden></div>`;
+        root.insertBefore(bar, root.firstChild);
+    }
+
+    function extractJoinRequests(res) {
+        return extractListData(res);
+    }
+
+    function pendingJoinRequests(requests) {
+        return (requests || []).filter((r) => String(r?.status || '').toUpperCase() === 'PENDING');
+    }
+
+    function renderNotifyListItems(requests) {
+        const pending = pendingJoinRequests(requests);
+        const banned = isUserTeamJoinBanned(cachedJoinBanStatus);
+        const banNotice = banned
+            ? `<p class="ag-global-bar__notify-ban ag-field-hint ag-field-hint--error">${escapeHtml(formatJoinBanMessage(cachedJoinBanStatus))}</p>`
+            : '';
+
+        if (!pending.length) {
+            return `${banNotice}<p class="ag-muted ag-global-bar__notify-empty">Nenhuma notificação no momento.</p>`;
+        }
+        return banNotice + pending.map((req) => {
+            const teamLabel = escapeHtml(req.teamName || `Time #${req.teamId || '—'}`);
+            const tag = req.teamTag ? ` <span class="ag-muted">(${escapeHtml(req.teamTag)})</span>` : '';
+            const inviter = req.invitedByName
+                ? `<p class="ag-muted ag-global-bar__notify-meta">Convidado por ${escapeHtml(req.invitedByName)}</p>`
+                : '';
+            const when = req.createdAt
+                ? `<p class="ag-muted ag-global-bar__notify-meta">${escapeHtml(formatDate(req.createdAt))}</p>`
+                : '';
+            const acceptDisabled = banned ? ' disabled' : '';
+            return `<article class="ag-global-bar__notify-item" data-ag-notify-item="${escapeAttr(String(req.id))}">
+                <p class="ag-global-bar__notify-title">Convite para ${teamLabel}${tag}</p>
+                ${inviter}
+                ${when}
+                <div class="ag-global-bar__notify-actions">
+                    <button type="button" class="ag-btn ag-btn--primary ag-btn--sm" data-ag-notify-accept="${escapeAttr(String(req.id))}"${acceptDisabled}>Aceitar convite</button>
+                </div>
+            </article>`;
+        }).join('');
+    }
+
+    function bindGlobalBarEventsOnce() {
+        if (globalBarEventsBound) return;
+        globalBarEventsBound = true;
+
+        document.addEventListener('click', (e) => {
+            const toggle = e.target.closest('[data-ag-notify-toggle]');
+            if (toggle) {
+                e.preventDefault();
+                e.stopPropagation();
+                const wrap = toggle.closest('[data-ag-notify-wrap]');
+                const panel = wrap?.querySelector('[data-ag-notify-panel]');
+                if (!panel) return;
+                const open = panel.hidden;
+                $$('[data-ag-notify-panel]').forEach((p) => { p.hidden = true; });
+                $$('[data-ag-notify-toggle]').forEach((btn) => btn.setAttribute('aria-expanded', 'false'));
+                if (open) {
+                    panel.hidden = false;
+                    toggle.setAttribute('aria-expanded', 'true');
+                }
+                return;
+            }
+
+            if (!e.target.closest('[data-ag-notify-wrap]')) {
+                $$('[data-ag-notify-panel]').forEach((p) => { p.hidden = true; });
+                $$('[data-ag-notify-toggle]').forEach((btn) => btn.setAttribute('aria-expanded', 'false'));
+            }
+
+            const acceptBtn = e.target.closest('[data-ag-notify-accept]');
+            if (acceptBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (isUserTeamJoinBanned(cachedJoinBanStatus)) {
+                    showAlert(document.querySelector('[data-ag-join-ban-banner]'), formatJoinBanMessage(cachedJoinBanStatus));
+                    return;
+                }
+                const requestId = acceptBtn.dataset.agNotifyAccept;
+                if (!requestId || acceptBtn.disabled) return;
+                acceptBtn.disabled = true;
+                acceptBtn.textContent = 'Aceitando…';
+                api.acceptTeamJoinRequest(requestId)
+                    .then(() => refreshGlobalClientBar())
+                    .catch((err) => {
+                        acceptBtn.disabled = false;
+                        acceptBtn.textContent = 'Aceitar convite';
+                        const item = acceptBtn.closest('[data-ag-notify-item]');
+                        let errEl = item?.querySelector('[data-ag-notify-error]');
+                        if (item && !errEl) {
+                            errEl = document.createElement('p');
+                            errEl.className = 'ag-field-hint ag-field-hint--error';
+                            errEl.dataset.agNotifyError = '';
+                            acceptBtn.parentElement?.prepend(errEl);
+                        }
+                        if (errEl) {
+                            errEl.textContent = formatTeamInviteError(err);
+                            errEl.hidden = false;
+                        }
+                    });
+            }
+        });
+    }
+
+    async function refreshGlobalClientBar() {
+        if (!api.isLoggedIn()) return;
+
+        const bars = $$('[data-ag-global-bar]');
+        if (!bars.length) return;
+
+        try {
+            const [balanceRes, requestsRes, banRes] = await Promise.all([
+                api.getBalance().catch(() => null),
+                api.listReceivedJoinRequests().catch(() => ({ data: [] })),
+                api.getTeamJoinBanStatus().catch(() => null),
+            ]);
+
+            cachedJoinBanStatus = banRes ? unwrapJoinBanStatus(banRes) : null;
+            const banned = isUserTeamJoinBanned(cachedJoinBanStatus);
+            const banMessage = banned ? formatJoinBanMessage(cachedJoinBanStatus) : '';
+
+            const wallet = balanceRes?.data ?? balanceRes ?? {};
+            const balanceText = formatCredits(wallet.availableBalance);
+            const requests = extractJoinRequests(requestsRes);
+            const pending = pendingJoinRequests(requests);
+            const nowLabel = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+            bars.forEach((bar) => {
+                const balanceEl = bar.querySelector('[data-ag-global-balance]');
+                if (balanceEl) balanceEl.textContent = balanceText;
+
+                const badge = bar.querySelector('[data-ag-notify-badge]');
+                if (badge) {
+                    if (pending.length) {
+                        badge.textContent = String(pending.length > 9 ? '9+' : pending.length);
+                        badge.hidden = false;
+                    } else {
+                        badge.hidden = true;
+                    }
+                }
+
+                const listEl = bar.querySelector('[data-ag-notify-list]');
+                if (listEl) listEl.innerHTML = renderNotifyListItems(requests);
+
+                const updatedEl = bar.querySelector('[data-ag-notify-updated]');
+                if (updatedEl) updatedEl.textContent = nowLabel ? `Atualizado ${nowLabel}` : '';
+
+                const banBanner = bar.querySelector('[data-ag-join-ban-banner]');
+                if (banBanner) {
+                    if (banned && banMessage) {
+                        banBanner.textContent = banMessage;
+                        banBanner.hidden = false;
+                    } else {
+                        banBanner.textContent = '';
+                        banBanner.hidden = true;
+                    }
+                }
+            });
+        } catch (_) { /* ignore poll errors */ }
+    }
+
+    function initGlobalClientBar(root) {
+        ensureGlobalClientBar(root);
+        bindGlobalBarEventsOnce();
+    }
+
+    function startGlobalBarPolling() {
+        if (globalBarPollTimer || !api.isLoggedIn()) return;
+        refreshGlobalClientBar();
+        globalBarPollTimer = window.setInterval(refreshGlobalClientBar, GLOBAL_BAR_POLL_MS);
+    }
+
+    function formatTeamInviteError(err) {
+        const message = String(err?.message || '').trim();
+        const payloadMsg = formatApiJoinErrorPayload(err?.payload);
+        const text = (payloadMsg || message).toLowerCase();
+        if (/ban|banido|banimento|join-ban|impedido de entrar|join ban/i.test(text)) {
+            return formatJoinBanMessage(err?.payload || cachedJoinBanStatus || {});
+        }
+        if (/409|pendente|already|já existe|já é membro|already a member|convite pendente/i.test(text)) {
+            return 'Este jogador já tem convite pendente ou já faz parte do time.';
+        }
+        if (/403|permiss|forbidden|não autorizado/i.test(text)) {
+            return 'Sem permissão para esta ação.';
+        }
+        if (/400|resolvido|resolved|already been/i.test(text)) {
+            return 'Este convite já foi respondido.';
+        }
+        return payloadMsg || message || 'Não foi possível processar o convite.';
+    }
+
+    function unwrapJoinBanStatus(res) {
+        const data = res?.data ?? res ?? {};
+        return data?.data ?? data;
+    }
+
+    function isUserTeamJoinBanned(status) {
+        if (!status) return false;
+        const s = unwrapJoinBanStatus(status);
+        if (s.banned === true || s.active === true || s.isBanned === true) return true;
+        const untilRaw = s.bannedUntil || s.expiresAt || s.until || s.banExpiresAt;
+        if (untilRaw) {
+            const until = new Date(untilRaw);
+            return !isNaN(until.getTime()) && until > new Date();
+        }
+        return false;
+    }
+
+    function formatJoinBanMessage(status) {
+        const s = unwrapJoinBanStatus(status);
+        const untilRaw = s.bannedUntil || s.expiresAt || s.until || s.banExpiresAt;
+        if (untilRaw) {
+            return `Você está impedido de entrar em times até ${formatDate(untilRaw)}.`;
+        }
+        const days = s.remainingDays ?? s.banDays ?? s.daysRemaining;
+        if (days != null && days !== '') {
+            return `Você está impedido de entrar em times por ${days} dia(s).`;
+        }
+        return 'Você está impedido de entrar em times no momento.';
+    }
+
+    function formatTeamMemberRemoveError(err) {
+        const message = String(err?.message || '').trim();
+        const payloadMsg = formatApiJoinErrorPayload(err?.payload);
+        const text = (payloadMsg || message).toLowerCase();
+        if (/scheduled|in_progress|partida|em andamento|agendada/i.test(text)) {
+            return 'Não é possível remover integrantes em partida agendada ou em andamento.';
+        }
+        if (/403|permiss|forbidden/i.test(text)) {
+            return 'Sem permissão para remover este integrante.';
+        }
+        return payloadMsg || message || 'Não foi possível remover o integrante.';
+    }
+
+    function extractRosterVacancies(res) {
+        return extractListData(res);
+    }
+
+    function pendingRosterVacancies(vacancies) {
+        return (vacancies || []).filter((v) => {
+            const status = String(v?.status || 'PENDING').toUpperCase();
+            return status === 'PENDING' || status === 'OPEN';
+        });
+    }
+
+    function vacancyPlayerName(vacancy) {
+        return vacancy?.vacatedClientName
+            || vacancy?.playerName
+            || vacancy?.clientName
+            || (vacancy?.vacatedClientUserId ? `Jogador #${vacancy.vacatedClientUserId}` : 'Integrante');
+    }
+
+    function vacancyTournamentLabel(vacancy) {
+        return vacancy?.tournamentName
+            || vacancy?.tournamentSlug
+            || vacancy?.tournament?.name
+            || vacancy?.tournament?.slug
+            || '—';
+    }
+
+    function isCurrentUserTeamOwner(players) {
+        const myId = getLoggedUserClientId();
+        if (!myId || !Array.isArray(players)) return false;
+        return players.some((p) => Number(memberClientId(p)) === myId && (p.ownerClient ?? p.owner));
+    }
+
+    function canCurrentUserLeaveTeam(players) {
+        const myId = getLoggedUserClientId();
+        if (!myId || !Array.isArray(players)) return false;
+        if (isCurrentUserTeamOwner(players)) return false;
+        return players.some((p) => Number(memberClientId(p)) === myId);
+    }
+
+    function renderTeamLeaveSection(canLeave) {
+        if (!canLeave) return '';
+        return `
+            <section class="ag-team-detail__section ag-team-detail__leave">
+                <h4 class="ag-team-detail__subtitle">Sair do time</h4>
+                <p class="ag-muted ag-team-detail__hint">Você pode sair a qualquer momento, inclusive com o time em torneio. Sua saída remove você da escalação e abre uma vaga por torneio ativo.</p>
+                <button type="button" class="ag-btn ag-btn--outline-danger ag-btn--sm" data-ag-leave-team>Sair do time</button>
+            </section>`;
+    }
+
+    function renderTeamRosterVacanciesSection(vacancies) {
+        const pending = pendingRosterVacancies(vacancies);
+        if (!pending.length) return '';
+
+        const rows = pending.map((v) => {
+            const id = v.id ?? v.vacancyId;
+            const tournament = escapeHtml(vacancyTournamentLabel(v));
+            const player = escapeHtml(vacancyPlayerName(v));
+            const when = v.createdAt ? escapeHtml(formatDate(v.createdAt)) : '—';
+            return `<tr class="ag-vacancy-row" data-ag-vacancy-row="${escapeAttr(String(id))}">
+                <td>${tournament}</td>
+                <td>${player}</td>
+                <td>${when}</td>
+                <td>
+                    <div class="ag-vacancy-row__actions">
+                        <input type="number" class="ag-field__input ag-vacancy-row__input" data-ag-vacancy-fill-id min="1" placeholder="ID do jogador">
+                        <button type="button" class="ag-btn ag-btn--primary ag-btn--sm" data-ag-vacancy-fill="${escapeAttr(String(id))}">Preencher</button>
+                        <button type="button" class="ag-btn ag-btn--ghost ag-btn--sm" data-ag-vacancy-forfeit="${escapeAttr(String(id))}">Sem reposição</button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+
+        return `
+            <section class="ag-team-detail__section ag-team-roster-vacancies">
+                <h4 class="ag-team-detail__subtitle">Vagas abertas na escalação (${pending.length})</h4>
+                <p class="ag-muted ag-team-detail__hint">Preencha a vaga com um jogador ou confirme sem reposição (o jogador que saiu poderá ser banido se o torneio iniciar).</p>
+                <div class="ag-table-wrap">
+                    <table class="ag-table ag-table--compact">
+                        <thead><tr><th>Torneio</th><th>Jogador que saiu</th><th>Aberta em</th><th>Ações</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </section>`;
+    }
+
+    function renderTeamReallocateSection(activeTournaments) {
+        const tournaments = Array.isArray(activeTournaments) ? activeTournaments : [];
+        const options = tournaments.map((t) => {
+            const slug = t.slug || t.tournamentSlug || '';
+            if (!slug) return '';
+            const label = tournamentDisplayName(t);
+            return `<option value="${escapeAttr(slug)}">${escapeHtml(label)}</option>`;
+        }).filter(Boolean).join('');
+
+        const tournamentField = options
+            ? `<select class="ag-field__input" data-ag-reallocate-slug required>
+                    <option value="">Selecione o torneio</option>
+                    ${options}
+               </select>`
+            : `<input type="text" class="ag-field__input" data-ag-reallocate-slug placeholder="slug-do-torneio" required>`;
+
+        return `
+            <section class="ag-team-detail__section ag-team-reallocate">
+                <h4 class="ag-team-detail__subtitle">Realocar escalação</h4>
+                <p class="ag-muted ag-team-detail__hint">Troque um jogador por outro diretamente na escalação. Bloqueado se o time tiver partida agendada ou em andamento.</p>
+                <div class="ag-team-reallocate__form">
+                    ${tournamentField}
+                    <input type="number" class="ag-field__input" data-ag-reallocate-out min="1" placeholder="ID que sai" required>
+                    <input type="number" class="ag-field__input" data-ag-reallocate-in min="1" placeholder="ID que entra" required>
+                    <button type="button" class="ag-btn ag-btn--ghost ag-btn--sm" data-ag-reallocate-submit>Realocar</button>
+                </div>
+            </section>`;
+    }
+
+    function showLeaveTeamConfirmModal(team) {
+        const teamName = team?.name || 'este time';
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'ag-modal';
+            overlay.hidden = false;
+            overlay.innerHTML = `
+                <div class="ag-modal__backdrop" data-ag-leave-cancel></div>
+                <div class="ag-modal__content ag-card game-card game-card--style2 ag-leave-team-modal">
+                    <button type="button" class="ag-modal__close" data-ag-leave-cancel aria-label="Fechar">&times;</button>
+                    <h3 class="ag-title">Sair do time</h3>
+                    <p class="ag-muted">Deseja sair de <strong>${escapeHtml(teamName)}</strong>?</p>
+                    <ul class="ag-withdraw-modal__list ag-muted">
+                        <li>Você pode sair mesmo com o time inscrito em torneios.</li>
+                        <li>Sua saída abre uma vaga na escalação de cada torneio ativo.</li>
+                        <li>O dono pode preencher a vaga ou confirmar sem reposição.</li>
+                    </ul>
+                    <div class="ag-form-actions ag-withdraw-modal__actions">
+                        <button type="button" class="ag-btn ag-btn--outline ag-btn--sm" data-ag-leave-cancel>Cancelar</button>
+                        <button type="button" class="ag-btn ag-btn--danger ag-btn--sm" data-ag-leave-confirm>Confirmar saída</button>
+                    </div>
+                </div>`;
+
+            const unmount = mountAgModal(overlay);
+            const close = (result) => closeAgModalSafely(unmount, resolve, result);
+
+            overlay.querySelectorAll('[data-ag-leave-cancel]').forEach((el) => {
+                bindModalClick(el, () => close(false));
+            });
+            const confirmBtn = overlay.querySelector('[data-ag-leave-confirm]');
+            if (confirmBtn) bindModalClick(confirmBtn, () => close(true));
+        });
+    }
+
+    function showForfeitVacancyConfirmModal(vacancy) {
+        const tournament = vacancyTournamentLabel(vacancy);
+        const player = vacancyPlayerName(vacancy);
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'ag-modal';
+            overlay.hidden = false;
+            overlay.innerHTML = `
+                <div class="ag-modal__backdrop" data-ag-forfeit-cancel></div>
+                <div class="ag-modal__content ag-card game-card game-card--style2">
+                    <button type="button" class="ag-modal__close" data-ag-forfeit-cancel aria-label="Fechar">&times;</button>
+                    <h3 class="ag-title">Confirmar sem reposição</h3>
+                    <p class="ag-muted">Torneio: <strong>${escapeHtml(tournament)}</strong></p>
+                    <p class="ag-muted">Vaga de: <strong>${escapeHtml(player)}</strong></p>
+                    <ul class="ag-withdraw-modal__list ag-muted">
+                        <li>A vaga ficará aberta até o torneio iniciar.</li>
+                        <li>Se não houver reposição, o jogador que saiu poderá ser banido de entrar em times.</li>
+                    </ul>
+                    <div class="ag-form-actions ag-withdraw-modal__actions">
+                        <button type="button" class="ag-btn ag-btn--outline ag-btn--sm" data-ag-forfeit-cancel>Cancelar</button>
+                        <button type="button" class="ag-btn ag-btn--danger ag-btn--sm" data-ag-forfeit-confirm>Confirmar</button>
+                    </div>
+                </div>`;
+
+            const unmount = mountAgModal(overlay);
+            const close = (result) => closeAgModalSafely(unmount, resolve, result);
+
+            overlay.querySelectorAll('[data-ag-forfeit-cancel]').forEach((el) => {
+                bindModalClick(el, () => close(false));
+            });
+            const confirmBtn = overlay.querySelector('[data-ag-forfeit-confirm]');
+            if (confirmBtn) bindModalClick(confirmBtn, () => close(true));
+        });
+    }
+
+    function renderTeamPendingJoinRequestsSection(requests) {
+        const pending = pendingJoinRequests(requests);
+        if (!pending.length) return '';
+
+        const rows = pending.map((req) => {
+            const name = escapeHtml(req.invitedClientName || `Jogador #${req.invitedClientUserId || '—'}`);
+            const when = req.createdAt ? escapeHtml(formatDate(req.createdAt)) : '—';
+            return `<tr>
+                <td>${name}</td>
+                <td><span class="ag-badge ag-badge--muted">${escapeHtml(JOIN_REQUEST_STATUS_LABELS.PENDING)}</span></td>
+                <td>${when}</td>
+            </tr>`;
+        }).join('');
+
+        return `
+            <section class="ag-team-detail__section ag-team-join-requests">
+                <h4 class="ag-team-detail__subtitle">Convites pendentes</h4>
+                <p class="ag-muted ag-team-detail__hint">Jogadores convidados precisam aceitar antes de entrar no time.</p>
+                <div class="ag-table-wrap">
+                    <table class="ag-table ag-table--compact">
+                        <thead><tr><th>Jogador</th><th>Status</th><th>Enviado em</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </section>`;
+    }
 
     function $(sel, root) {
         return (root || document).querySelector(sel);
@@ -354,7 +906,9 @@
 
     const listLoadSeq = new WeakMap();
     const tournamentListState = new WeakMap();
+    const tournamentListPollTimers = new WeakMap();
     const TOURNAMENTS_PAGE_SIZE = 10;
+    const TOURNAMENTS_LIST_POLL_MS = 15000;
 
     function findPaginationEl(root, listEl) {
         const panel = listEl?.closest('[data-ag-participating-panel]');
@@ -429,6 +983,7 @@
 
     const JOINED_SLUGS_CACHE_KEY = 'ag_joined_tournament_slugs';
     const WITHDRAWN_SLUGS_CACHE_KEY = 'ag_withdrawn_tournament_slugs';
+    const joinFlowLocks = new Set();
     const TEAM_MEMBER_TOURNAMENT_CONFLICT_MSG = 'Um ou mais integrantes do seu time já estão inscritos neste torneio por outra equipe.';
 
     function readCachedJoinedSlugs() {
@@ -1559,6 +2114,283 @@
         return detailSection(`Inscritos (${list.length})`, content);
     }
 
+    function unwrapMatchesList(res) {
+        const data = res?.data ?? res;
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data?.content)) return data.content;
+        if (Array.isArray(data?.matches)) return data.matches;
+        if (Array.isArray(data?.data)) return data.data;
+        return [];
+    }
+
+    /** Mapa participantId → nome (os nomes podem vir nulos no MatchResponse). */
+    function buildParticipantNameMap(participantsPayload) {
+        const map = new Map();
+        const list = Array.isArray(participantsPayload?.participants) ? participantsPayload.participants : [];
+        const format = String(participantsPayload?.format || '').toUpperCase();
+        list.forEach((item) => {
+            const isTeam = !!item.team || isTeamTournamentFormat(format);
+            const name = isTeam && item.team
+                ? `${item.team.name || 'Time'}${item.team.tag ? ` (${item.team.tag})` : ''}`
+                : (item.player ? publicPlayerDisplayName(item.player) : '');
+            if (!name) return;
+            [item.participantId, item.id, item.participant?.id].forEach((id) => {
+                if (id != null && id !== '') map.set(String(id), name);
+            });
+        });
+        return map;
+    }
+
+    function matchSideLabel(match, side, nameMap) {
+        const name = side === 'home' ? match.homeParticipantName : match.awayParticipantName;
+        const id = side === 'home' ? match.homeParticipantId : match.awayParticipantId;
+        const isWinner = match.winnerParticipantId != null && id != null
+            && String(match.winnerParticipantId) === String(id);
+        let label;
+        if (name) label = escapeHtml(name);
+        else if (id != null && nameMap instanceof Map && nameMap.has(String(id))) label = escapeHtml(nameMap.get(String(id)));
+        else if (id != null) label = `#${escapeHtml(String(id))}`;
+        else return '<span class="ag-muted ag-match-tbd">Aguardando classificação</span>';
+        return isWinner ? `<strong class="ag-match-winner">${label}</strong>` : label;
+    }
+
+    function matchScheduleLabel(match) {
+        const tw = TIME_WINDOW_LABELS[String(match.timeWindow || '').toUpperCase()];
+        if (match.scheduledAt) {
+            const when = escapeHtml(formatDate(match.scheduledAt));
+            return tw ? `${when} · ${escapeHtml(tw)}` : when;
+        }
+        return tw
+            ? `<span class="ag-muted">A definir · ${escapeHtml(tw)}</span>`
+            : '<span class="ag-muted">A definir</span>';
+    }
+
+    function matchScoreLabel(match) {
+        let score;
+        if (match.homeScore == null && match.awayScore == null) {
+            score = '<span class="ag-muted">—</span>';
+        } else {
+            score = `${match.homeScore ?? '—'} × ${match.awayScore ?? '—'}`;
+        }
+        if (match.resultProofUrl) {
+            score += ` <a href="${escapeAttr(match.resultProofUrl)}" class="ag-match-proof" target="_blank" rel="noopener" title="Ver comprovante do resultado">comprovante</a>`;
+        }
+        return score;
+    }
+
+    function matchStatusLabel(status) {
+        const key = String(status || '').toUpperCase();
+        return MATCH_STATUS[key] || status || '—';
+    }
+
+    function roundTypeLabel(roundType) {
+        const key = String(roundType || '').toUpperCase();
+        return ROUND_TYPE_LABELS[key] || '';
+    }
+
+    function matchRoundValue(m) {
+        const r = m.roundNumber ?? m.round ?? m.bracketRound;
+        return r != null && r !== '' ? r : null;
+    }
+
+    /** Título do agrupamento: prioriza phaseLabel do backend; cai para roundType/rodada e adiciona grupo. */
+    function matchGroupTitle(m) {
+        let phase = m.phaseLabel
+            || m.roundName
+            || roundTypeLabel(m.roundType);
+        if (!phase) {
+            const r = matchRoundValue(m);
+            phase = r != null ? `Rodada ${r}` : 'Partidas';
+        }
+        if (m.groupNumber != null && m.groupNumber !== '') {
+            return `${phase} · Grupo ${m.groupNumber}`;
+        }
+        return phase;
+    }
+
+    function sortMatches(a, b) {
+        const ra = matchRoundValue(a);
+        const rb = matchRoundValue(b);
+        if (ra != null && rb != null && Number(ra) !== Number(rb)) return Number(ra) - Number(rb);
+        const ga = Number(a.groupNumber ?? 0);
+        const gb = Number(b.groupNumber ?? 0);
+        if (ga !== gb) return ga - gb;
+        const na = Number(a.matchNumber ?? a.bracketPosition ?? 0);
+        const nb = Number(b.matchNumber ?? b.bracketPosition ?? 0);
+        return na - nb;
+    }
+
+    function renderMatchesGroupsHtml(matches, nameMap) {
+        const list = (Array.isArray(matches) ? matches.slice() : []).sort(sortMatches);
+        if (!list.length) return '';
+        const groups = new Map();
+        list.forEach((m) => {
+            const key = matchGroupTitle(m);
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(m);
+        });
+        return [...groups.entries()].map(([label, items]) => {
+            const rows = items.map((m) => `<tr>
+                <td>${escapeHtml(String(m.matchNumber ?? m.bracketPosition ?? '—'))}</td>
+                <td><div class="ag-match-versus">${matchSideLabel(m, 'home', nameMap)} <span class="ag-match-versus__vs">vs</span> ${matchSideLabel(m, 'away', nameMap)}</div></td>
+                <td>${matchScoreLabel(m)}</td>
+                <td><span class="ag-badge ag-badge--muted">${escapeHtml(matchStatusLabel(m.status))}</span></td>
+                <td>${matchScheduleLabel(m)}</td>
+            </tr>`).join('');
+            return `<div class="ag-match-group">
+                <h4 class="ag-match-group__title">${escapeHtml(label)}</h4>
+                <div class="ag-table-wrap">
+                    <table class="ag-table ag-match-table">
+                        <thead><tr><th>#</th><th>Confronto</th><th>Placar</th><th>Status</th><th>Quando</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function renderTournamentMatchesSection(tournament, matches, participantsPayload) {
+        if (matches === null) {
+            if (!api.isLoggedIn()) {
+                return detailSection('Partidas & chaveamento', '<p class="ag-muted">Entre na sua conta para ver as partidas deste torneio.</p>');
+            }
+            return detailSection('Partidas & chaveamento', '<p class="ag-muted">Não foi possível carregar as partidas no momento.</p>');
+        }
+        if (!matches.length) {
+            return detailSection('Partidas & chaveamento', '<p class="ag-muted">As partidas ainda não foram geradas pelo organizador.</p>');
+        }
+        const nameMap = buildParticipantNameMap(participantsPayload);
+        const groupsHtml = renderMatchesGroupsHtml(matches, nameMap);
+        return detailSection('Partidas & chaveamento', `
+            <p class="ag-muted ag-match-hint">Confrontos ainda não definidos aparecem como “Aguardando classificação”. Os horários são definidos pelo organizador.</p>
+            ${groupsHtml}
+        `);
+    }
+
+    async function fetchTournamentMatches(slug, tournament) {
+        const apiSlug = normalizeSlug(tournament?.slug || slug);
+        if (!apiSlug || !api.isLoggedIn()) return null;
+        try {
+            return unwrapMatchesList(await api.listMatches(apiSlug));
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function unwrapStandingsList(res) {
+        const data = res?.data ?? res;
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data?.content)) return data.content;
+        if (Array.isArray(data?.standings)) return data.standings;
+        if (Array.isArray(data?.entries)) return data.entries;
+        if (Array.isArray(data?.data)) return data.data;
+        return [];
+    }
+
+    async function fetchTournamentStandings(slug, tournament) {
+        const apiSlug = normalizeSlug(tournament?.slug || slug);
+        if (!apiSlug || !api.isLoggedIn()) return null;
+        try {
+            return unwrapStandingsList(await api.listStandings(apiSlug));
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function standingsHasLeagueStats(entries) {
+        return entries.some((e) => e.points != null || e.wins != null || e.draws != null || e.losses != null);
+    }
+
+    function standingsHasGroups(entries) {
+        return entries.some((e) => e.groupNumber != null && e.groupNumber !== '');
+    }
+
+    function standingEntryName(entry, nameMap) {
+        if (entry.participantName) return escapeHtml(entry.participantName);
+        const id = entry.participantId;
+        if (id != null && nameMap instanceof Map && nameMap.has(String(id))) {
+            return escapeHtml(nameMap.get(String(id)));
+        }
+        return id != null ? `#${escapeHtml(String(id))}` : '—';
+    }
+
+    function standingPositionCell(position) {
+        const pos = position != null && position !== '' ? String(position) : '—';
+        const medal = pos === '1' ? '🥇' : pos === '2' ? '🥈' : pos === '3' ? '🥉' : '';
+        const cls = ['1', '2', '3'].includes(pos) ? ' ag-standings__pos--medal' : '';
+        return `<span class="ag-standings__pos${cls}">${medal ? `${medal} ` : ''}${escapeHtml(pos)}</span>`;
+    }
+
+    function renderStandingsTable(entries, nameMap, league) {
+        const rows = entries.map((e) => {
+            const note = e.note ? `<span class="ag-badge ag-badge--muted">${escapeHtml(e.note)}</span>` : '';
+            if (league) {
+                return `<tr>
+                    <td>${standingPositionCell(e.position)}</td>
+                    <td>${standingEntryName(e, nameMap)}</td>
+                    <td>${e.points ?? '—'}</td>
+                    <td>${e.wins ?? '—'}</td>
+                    <td>${e.draws ?? '—'}</td>
+                    <td>${e.losses ?? '—'}</td>
+                    <td>${note}</td>
+                </tr>`;
+            }
+            return `<tr>
+                <td>${standingPositionCell(e.position)}</td>
+                <td>${standingEntryName(e, nameMap)}</td>
+                <td>${note}</td>
+            </tr>`;
+        }).join('');
+
+        const head = league
+            ? '<tr><th>#</th><th>Participante</th><th>Pts</th><th>V</th><th>E</th><th>D</th><th>Obs.</th></tr>'
+            : '<tr><th>#</th><th>Participante</th><th>Obs.</th></tr>';
+
+        return `<div class="ag-table-wrap">
+            <table class="ag-table ag-standings-table">
+                <thead>${head}</thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+    }
+
+    function sortStandings(a, b) {
+        const ga = Number(a.groupNumber ?? 0);
+        const gb = Number(b.groupNumber ?? 0);
+        if (ga !== gb) return ga - gb;
+        const pa = Number(a.position ?? Number.MAX_SAFE_INTEGER);
+        const pb = Number(b.position ?? Number.MAX_SAFE_INTEGER);
+        return pa - pb;
+    }
+
+    function renderTournamentStandingsSection(tournament, standings, participantsPayload) {
+        if (!Array.isArray(standings) || !standings.length) return '';
+
+        const entries = standings.slice().sort(sortStandings);
+        const nameMap = buildParticipantNameMap(participantsPayload);
+        const league = standingsHasLeagueStats(entries);
+
+        let content;
+        if (standingsHasGroups(entries)) {
+            const groups = new Map();
+            entries.forEach((e) => {
+                const key = e.groupNumber != null && e.groupNumber !== '' ? `Grupo ${e.groupNumber}` : 'Geral';
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(e);
+            });
+            content = [...groups.entries()].map(([label, items]) => `
+                <div class="ag-standings-group">
+                    <h4 class="ag-standings-group__title">${escapeHtml(label)}</h4>
+                    ${renderStandingsTable(items, nameMap, league)}
+                </div>
+            `).join('');
+        } else {
+            content = renderStandingsTable(entries, nameMap, league);
+        }
+
+        return detailSection('Classificação', content);
+    }
+
     function renderEntryFeeRevenueSection(tournament, revenue) {
         const data = unwrapRevenuePayload(revenue);
         const entries = Array.isArray(data.entries) ? data.entries : [];
@@ -1851,6 +2683,7 @@
                 joinBtn.classList.add('ag-game-card__join--pulse');
                 joinBtn.onclick = async (e) => {
                     e.preventDefault();
+                    e.stopPropagation();
                     await joinFromList(slug, t.format, root);
                 };
             } else {
@@ -2151,6 +2984,7 @@
         $$('[data-ag-join-slug]', list).forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 joinFromList(btn.dataset.agJoinSlug, btn.dataset.agFormat, root);
             });
         });
@@ -2178,7 +3012,8 @@
         });
     }
 
-    async function loadTournamentList(root, filter) {
+    async function loadTournamentList(root, filter, options = {}) {
+        const silent = !!options.silent;
         const list = $('[data-ag-list]', root);
         const empty = $('[data-ag-empty]', root);
         const alert = $('[data-ag-alert]', root);
@@ -2188,18 +3023,24 @@
 
         bindPaginationOnce(root, list);
 
-        hideAlert(alert);
-        setLoading(root, true);
-        setEmptyMessage(root, filter);
-        if (list) {
-            list.innerHTML = '';
-            list.hidden = true;
+        if (!silent) {
+            hideAlert(alert);
+            setLoading(root, true);
+            setEmptyMessage(root, filter);
+            if (list) {
+                list.innerHTML = '';
+                list.hidden = true;
+            }
+            if (empty) empty.hidden = true;
+            if (paginationEl) {
+                paginationEl.hidden = true;
+                paginationEl.innerHTML = '';
+            }
+        } else {
+            setEmptyMessage(root, filter);
         }
-        if (empty) empty.hidden = true;
-        if (paginationEl) {
-            paginationEl.hidden = true;
-            paginationEl.innerHTML = '';
-        }
+
+        const currentPage = silent && list ? (tournamentListState.get(list)?.page || 1) : 1;
 
         try {
             let items = await fetchTournamentsByFilter(filter);
@@ -2234,6 +3075,10 @@
                     list.hidden = true;
                 }
                 if (empty) empty.hidden = false;
+                if (paginationEl) {
+                    paginationEl.hidden = true;
+                    paginationEl.innerHTML = '';
+                }
                 return;
             }
 
@@ -2246,10 +3091,11 @@
                     userCtx,
                     enrollmentHints: {},
                 };
-                renderPaginatedTournamentList(root, list, items, 1, cardOptions);
+                renderPaginatedTournamentList(root, list, items, currentPage, cardOptions);
 
                 if (api.isLoggedIn()) {
-                    const slice = items.slice(0, TOURNAMENTS_PAGE_SIZE);
+                    const sliceStart = (currentPage - 1) * TOURNAMENTS_PAGE_SIZE;
+                    const slice = items.slice(sliceStart, sliceStart + TOURNAMENTS_PAGE_SIZE);
                     const { hints, slugsUpdated } = await buildEnrollmentHintsForTournaments(
                         slice,
                         userCtx,
@@ -2264,10 +3110,14 @@
                                 list.hidden = true;
                             }
                             if (empty) empty.hidden = false;
+                            if (paginationEl) {
+                                paginationEl.hidden = true;
+                                paginationEl.innerHTML = '';
+                            }
                             return;
                         }
                     }
-                    renderPaginatedTournamentList(root, list, items, 1, {
+                    renderPaginatedTournamentList(root, list, items, currentPage, {
                         ...cardOptions,
                         enrollmentHints: hints,
                     });
@@ -2275,15 +3125,39 @@
             }
         } catch (err) {
             if (listLoadSeq.get(root) !== seq) return;
-            showAlert(alert, err.message);
+            if (!silent) showAlert(alert, err.message);
         } finally {
-            if (listLoadSeq.get(root) === seq) {
+            if (!silent && listLoadSeq.get(root) === seq) {
                 setLoading(root, false);
             }
         }
     }
 
+    function stopTournamentListPolling(root) {
+        const timerId = tournamentListPollTimers.get(root);
+        if (timerId) {
+            window.clearInterval(timerId);
+            tournamentListPollTimers.delete(root);
+        }
+    }
+
+    function startTournamentListPolling(root) {
+        stopTournamentListPolling(root);
+        const timerId = window.setInterval(() => {
+            if (root.dataset.agPage !== 'torneios') {
+                stopTournamentListPolling(root);
+                return;
+            }
+            const filter = root.dataset.agActiveFilter || 'REGISTRATION_OPEN';
+            loadTournamentList(root, filter, { silent: true });
+        }, TOURNAMENTS_LIST_POLL_MS);
+        tournamentListPollTimers.set(root, timerId);
+    }
+
     async function joinFromList(slug, format, root) {
+        const lockKey = normalizeSlug(slug) || String(slug || '').trim();
+        if (!lockKey || joinFlowLocks.has(lockKey)) return;
+
         if (!api.isLoggedIn()) {
             showAlert($('[data-ag-alert]', root), cfg.i18n?.loginRequired);
             return;
@@ -2294,6 +3168,8 @@
             showAlert(alert, 'Torneio inválido.');
             return;
         }
+
+        joinFlowLocks.add(lockKey);
         hideAlert(alert);
         hideAlert($('[data-ag-success]', root));
         try {
@@ -2393,6 +3269,7 @@
             forgetWithdrawnSlug(apiSlug, tournament);
             rememberJoinedSlug(apiSlug);
             showAlert(alert, 'Inscrição realizada!', 'success');
+            refreshGlobalClientBar();
             if (root.dataset.agPage === 'torneio') {
                 await initTorneioDetail(root);
             } else if (root.dataset.agPage === 'torneios') {
@@ -2412,6 +3289,8 @@
                     await loadTournamentList(root, root.dataset.agActiveFilter || 'REGISTRATION_OPEN');
                 }
             }
+        } finally {
+            joinFlowLocks.delete(lockKey);
         }
     }
 
@@ -2451,6 +3330,22 @@
         };
     }
 
+    /** Fecha modal no próximo tick para evitar click-through no botão de inscrição/desistência. */
+    function closeAgModalSafely(unmount, resolve, result) {
+        window.setTimeout(() => {
+            unmount();
+            resolve(result);
+        }, 0);
+    }
+
+    function bindModalClick(el, handler) {
+        el.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handler(e);
+        });
+    }
+
     function showWithdrawConfirmModal(tournament, options = {}) {
         const opts = options || {};
         const name = tournamentDisplayName(tournament);
@@ -2481,15 +3376,13 @@
 
             const unmount = mountAgModal(overlay);
 
-            const close = (result) => {
-                unmount();
-                resolve(result);
-            };
+            const close = (result) => closeAgModalSafely(unmount, resolve, result);
 
             overlay.querySelectorAll('[data-ag-withdraw-cancel]').forEach((el) => {
-                el.addEventListener('click', () => close(false));
+                bindModalClick(el, () => close(false));
             });
-            overlay.querySelector('[data-ag-withdraw-confirm]')?.addEventListener('click', () => close(true));
+            const confirmBtn = overlay.querySelector('[data-ag-withdraw-confirm]');
+            if (confirmBtn) bindModalClick(confirmBtn, () => close(true));
         });
     }
 
@@ -2566,6 +3459,7 @@
             rememberWithdrawnSlug(apiSlug, tournament);
             showAlert(success, 'Desinscrição realizada com sucesso', 'success');
             hideAlert(alert);
+            refreshGlobalClientBar();
 
             const page = root.dataset.agPage;
             if (page === 'torneio') {
@@ -2646,31 +3540,31 @@
             const unmount = mountAgModal(overlay);
 
             const errorEl = overlay.querySelector('[data-ag-roster-error]');
-            const close = (result) => {
-                unmount();
-                resolve(result);
-            };
+            const close = (result) => closeAgModalSafely(unmount, resolve, result);
 
             overlay.querySelectorAll('[data-ag-roster-cancel]').forEach((el) => {
-                el.addEventListener('click', () => close(null));
+                bindModalClick(el, () => close(null));
             });
 
-            overlay.querySelector('[data-ag-roster-confirm]')?.addEventListener('click', () => {
-                const playerClientUserIds = [...overlay.querySelectorAll('[data-ag-roster-member]:checked:not(:disabled)')]
-                    .map((el) => Number(el.value))
-                    .filter((id) => Number.isFinite(id) && id > 0);
-                if (playerClientUserIds.length < minPlayers || playerClientUserIds.length > maxPlayers) {
-                    if (errorEl) {
-                        const blockedCount = overlay.querySelectorAll('[data-ag-roster-member]:disabled').length;
-                        errorEl.textContent = blockedCount
-                            ? `Selecione entre ${minPlayers} e ${maxPlayers} jogadores disponíveis. Integrantes já inscritos por outra equipe não podem ser escalados.`
-                            : `Selecione entre ${minPlayers} e ${maxPlayers} jogadores.`;
-                        errorEl.hidden = false;
+            const confirmBtn = overlay.querySelector('[data-ag-roster-confirm]');
+            if (confirmBtn) {
+                bindModalClick(confirmBtn, () => {
+                    const playerClientUserIds = [...overlay.querySelectorAll('[data-ag-roster-member]:checked:not(:disabled)')]
+                        .map((el) => Number(el.value))
+                        .filter((id) => Number.isFinite(id) && id > 0);
+                    if (playerClientUserIds.length < minPlayers || playerClientUserIds.length > maxPlayers) {
+                        if (errorEl) {
+                            const blockedCount = overlay.querySelectorAll('[data-ag-roster-member]:disabled').length;
+                            errorEl.textContent = blockedCount
+                                ? `Selecione entre ${minPlayers} e ${maxPlayers} jogadores disponíveis. Integrantes já inscritos por outra equipe não podem ser escalados.`
+                                : `Selecione entre ${minPlayers} e ${maxPlayers} jogadores.`;
+                            errorEl.hidden = false;
+                        }
+                        return;
                     }
-                    return;
-                }
-                close({ playerClientUserIds });
-            });
+                    close({ playerClientUserIds });
+                });
+            }
         });
     }
 
@@ -2764,17 +3658,17 @@
                 </div>`;
 
             const unmount = mountAgModal(overlay);
-            const close = (result) => {
-                unmount();
-                resolve(result);
-            };
+            const close = (result) => closeAgModalSafely(unmount, resolve, result);
 
             overlay.querySelectorAll('[data-ag-solo-join-cancel]').forEach((el) => {
-                el.addEventListener('click', () => close(false));
+                bindModalClick(el, () => close(false));
             });
-            overlay.querySelector('[data-ag-solo-join-confirm]')?.addEventListener('click', () => {
-                if (canConfirm) close(true);
-            });
+            const confirmBtn = overlay.querySelector('[data-ag-solo-join-confirm]');
+            if (confirmBtn) {
+                bindModalClick(confirmBtn, () => {
+                    if (canConfirm) close(true);
+                });
+            }
         });
     }
 
@@ -2811,17 +3705,17 @@
 
             const unmount = mountAgModal(overlay);
 
-            const close = (result) => {
-                unmount();
-                resolve(result);
-            };
+            const close = (result) => closeAgModalSafely(unmount, resolve, result);
 
             overlay.querySelectorAll('[data-ag-team-join-cancel]').forEach((el) => {
-                el.addEventListener('click', () => close(false));
+                bindModalClick(el, () => close(false));
             });
-            overlay.querySelector('[data-ag-team-join-confirm]')?.addEventListener('click', () => {
-                if (canConfirm) close(true);
-            });
+            const confirmBtn = overlay.querySelector('[data-ag-team-join-confirm]');
+            if (confirmBtn) {
+                bindModalClick(confirmBtn, () => {
+                    if (canConfirm) close(true);
+                });
+            }
         });
     }
 
@@ -3463,6 +4357,7 @@
         });
 
         await loadTournamentList(root, activeFilter);
+        startTournamentListPolling(root);
     }
 
     function initParticipando(root) {
@@ -3628,6 +4523,22 @@
                 participantsPayload = await fetchTournamentParticipants(t.slug || slug, t);
                 participantsEl.innerHTML = renderTournamentParticipantsSection(t, participantsPayload);
                 participantsEl.hidden = false;
+            }
+
+            const matchesEl = $('[data-ag-detail-matches]', root);
+            if (matchesEl) {
+                const matches = await fetchTournamentMatches(t.slug || slug, t);
+                const matchesHtml = renderTournamentMatchesSection(t, matches, participantsPayload);
+                matchesEl.innerHTML = matchesHtml;
+                matchesEl.hidden = !matchesHtml;
+            }
+
+            const standingsEl = $('[data-ag-detail-standings]', root);
+            if (standingsEl) {
+                const standings = await fetchTournamentStandings(t.slug || slug, t);
+                const standingsHtml = renderTournamentStandingsSection(t, standings, participantsPayload);
+                standingsEl.innerHTML = standingsHtml;
+                standingsEl.hidden = !standingsHtml;
             }
 
             const revenueEl = $('[data-ag-detail-revenue]', root);
@@ -3861,6 +4772,31 @@
         }
     }
 
+    function renderPurchaseResult(data) {
+        const credits = formatCredits(data.credits ?? data.amount);
+        const amount = formatCredits(data.amount ?? data.credits);
+        const paymentUrl = String(data.paymentUrl || '').trim();
+        const pending = data.pending === true;
+        const idLine = data.invoiceId != null && data.invoiceId !== ''
+            ? `<p class="ag-muted ag-purchase-invoice__id">Fatura #${escapeHtml(String(data.invoiceId))}</p>`
+            : '';
+        const pendingNote = pending
+            ? '<p class="ag-field-hint">Já havia uma fatura em aberto — ela foi reaproveitada. Conclua o pagamento dela.</p>'
+            : '';
+        const payBtn = paymentUrl
+            ? `<a href="${escapeAttr(paymentUrl)}" class="ag-btn ag-btn--primary ag-btn--block" target="_blank" rel="noopener">Pagar fatura</a>`
+            : '<p class="ag-muted">Link de pagamento indisponível no momento. Tente novamente.</p>';
+        return `
+            <div class="ag-purchase-invoice game-card game-card--style2">
+                <h4 class="ag-section-title">${pending ? 'Fatura pendente' : 'Fatura gerada'}</h4>
+                ${idLine}
+                <p>Créditos: <strong>${credits}</strong> · Valor: <strong>R$ ${amount}</strong></p>
+                ${pendingNote}
+                ${payBtn}
+                <p class="ag-muted ag-purchase-invoice__hint">O saldo é creditado automaticamente após a confirmação do pagamento. Atualize esta página depois de pagar.</p>
+            </div>`;
+    }
+
     /* ── Carteira (histórico + compra + saque) ── */
     async function initCarteira(root) {
         if (!requireAuth(root)) return;
@@ -3910,6 +4846,7 @@
                 showAlert(alert, err.message);
             } finally {
                 setLoading(root, false);
+                refreshGlobalClientBar();
             }
         }
 
@@ -3926,18 +4863,48 @@
             });
         }
 
-        $('[data-ag-form="deposit"]', root)?.addEventListener('submit', async (e) => {
+        const purchaseForm = $('[data-ag-form="deposit"]', root);
+        purchaseForm?.addEventListener('submit', async (e) => {
             e.preventDefault();
             hideAlert(alert);
             hideAlert(success);
+            const resultEl = $('[data-ag-purchase-result]', root);
+            if (resultEl) {
+                resultEl.hidden = true;
+                resultEl.innerHTML = '';
+            }
             const fd = new FormData(e.target);
+            const amount = parseFloat(fd.get('amount'));
+            if (!Number.isFinite(amount) || amount <= 0) {
+                showAlert(alert, 'Informe um valor válido em créditos.');
+                return;
+            }
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
             try {
-                await api.deposit(parseFloat(fd.get('amount')), fd.get('description') || 'Compra via site');
-                showAlert(success, 'Créditos adicionados!', 'success');
+                const res = await api.purchaseCredits(amount);
+                const data = res?.data ?? res ?? {};
+                const paymentUrl = String(data.paymentUrl || '').trim();
+                const pending = data.pending === true;
+                showAlert(
+                    success,
+                    pending
+                        ? 'Você já tem uma fatura em aberto. Conclua o pagamento para receber os créditos.'
+                        : 'Fatura gerada! O saldo será creditado após o pagamento.',
+                    'success'
+                );
+                if (resultEl) {
+                    resultEl.innerHTML = renderPurchaseResult(data);
+                    resultEl.hidden = false;
+                }
+                if (paymentUrl) {
+                    window.open(paymentUrl, '_blank', 'noopener');
+                }
                 e.target.reset();
-                await loadWallet();
             } catch (err) {
                 showAlert(alert, err.message);
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         });
 
@@ -4807,6 +5774,7 @@
         return `
             <section class="ag-team-detail__section">
                 <h4 class="ag-team-detail__subtitle">Integrantes (${players.length})</h4>
+                <p class="ag-muted ag-team-detail__hint">O dono só pode remover integrantes que não estejam em partida agendada ou em andamento.</p>
                 <ul class="ag-team-detail__member-list">
                     ${players.map((p) => {
                         const clientUserId = memberClientId(p);
@@ -4996,12 +5964,12 @@
 
         const addMemberHtml = canManage
             ? `<div class="ag-team-detail__manage">
-                <h4 class="ag-team-detail__subtitle">Adicionar jogador</h4>
+                <h4 class="ag-team-detail__subtitle">Convidar jogador</h4>
                 <div class="ag-team-detail__manage-row">
                     <input type="number" class="ag-field__input" data-ag-add-member-id min="1" placeholder="ID do jogador">
-                    <button type="button" class="ag-btn ag-btn--primary ag-btn--sm" data-ag-add-member>Adicionar</button>
+                    <button type="button" class="ag-btn ag-btn--primary ag-btn--sm" data-ag-add-member>Enviar convite</button>
                 </div>
-                <p class="ag-muted ag-team-detail__hint">Informe o ID do jogador conforme cadastro na plataforma.</p>
+                <p class="ag-muted ag-team-detail__hint">O jogador receberá um convite e precisará aceitar para entrar no time.</p>
             </div>`
             : '';
 
@@ -5055,9 +6023,13 @@
                 ${renderTeamDetailTournamentsSection(detail.activeTournaments)}
                 ${socialHtml}
                 ${renderTeamDetailPlayersSection(players, canManage)}
+                ${canManage ? renderTeamRosterVacanciesSection(opts.rosterVacancies || []) : ''}
+                ${canManage ? renderTeamReallocateSection(detail.activeTournaments) : ''}
+                ${renderTeamPendingJoinRequestsSection(opts.pendingJoinRequests || [])}
                 ${addMemberHtml}
                 ${renderTeamCaptainSection(players, canManage)}
                 ${transferHtml}
+                ${renderTeamLeaveSection(canCurrentUserLeaveTeam(players))}
                 <div class="ag-team-detail__actions">
                     ${opts.showEdit && canManage ? `<button type="button" class="ag-btn ag-btn--primary ag-btn--sm" data-ag-edit-team="${detail.id}">Editar time</button>` : ''}
                 </div>
@@ -5260,6 +6232,16 @@
                 const teamMeta = myTeams.find((t) => String(t.id) === String(teamId));
                 const canManage = !!mgmt?.canManage;
                 const requests = canManage ? unwrapAvailabilityRequests(requestsRes) : [];
+                let pendingJoinRequests = [];
+                let rosterVacancies = [];
+                if (canManage) {
+                    try {
+                        pendingJoinRequests = extractJoinRequests(await api.listTeamJoinRequests(teamId, false));
+                    } catch (_) { /* ignore */ }
+                    try {
+                        rosterVacancies = extractRosterVacancies(await api.listTeamRosterVacancies(teamId, true));
+                    } catch (_) { /* ignore */ }
+                }
 
                 if (title) title.textContent = detail.name || 'Detalhes do time';
                 if (detailEl) {
@@ -5267,6 +6249,8 @@
                         showEdit: true,
                         teamMeta,
                         pendingAvailabilityRequests: canManage ? requests : [],
+                        pendingJoinRequests,
+                        rosterVacancies,
                     });
                     detailEl.hidden = false;
 
@@ -5318,6 +6302,10 @@
                     onDeleted: () => {
                         window.location.href = timesPageUrl() || cfg.homeUrl || '/';
                     },
+                    onLeft: () => {
+                        window.location.href = timesPageUrl() || cfg.homeUrl || '/';
+                    },
+                    rosterVacancies,
                 });
             } catch (err) {
                 showAlert(alert, err.message);
@@ -5360,15 +6348,107 @@
                     showAlert(alert, 'Integrante inválido.');
                     return;
                 }
-                if (!confirm('Remover este integrante do time?')) return;
+                if (!confirm('Remover este integrante do time? Integrantes em partida agendada ou em andamento não podem ser removidos.')) return;
                 try {
                     await api.removeTeamMember(teamId, clientUserId);
-                    showAlert(success, 'Integrante removido.', 'success');
+                    showAlert(success, 'Integrante removido. Vagas podem ter sido abertas na escalação de torneios ativos.', 'success');
                     await onChanged();
                 } catch (err) {
-                    showAlert(alert, err.message || 'Não foi possível remover o integrante.');
+                    showAlert(alert, formatTeamMemberRemoveError(err));
                 }
             });
+        });
+
+        detailEl.querySelector('[data-ag-leave-team]')?.addEventListener('click', async () => {
+            const myId = getLoggedUserClientId();
+            if (!myId) {
+                showAlert(alert, 'Não foi possível identificar sua conta.');
+                return;
+            }
+            const confirmed = await showLeaveTeamConfirmModal(team);
+            if (!confirmed) return;
+            try {
+                await api.leaveTeam(teamId, myId);
+                showAlert(success, 'Você saiu do time. Uma vaga foi aberta na escalação de cada torneio ativo.', 'success');
+                if (typeof callbacks.onLeft === 'function') {
+                    callbacks.onLeft();
+                } else {
+                    await onChanged();
+                }
+            } catch (err) {
+                showAlert(alert, formatTeamMemberRemoveError(err));
+            }
+        });
+
+        $$('[data-ag-vacancy-fill]', detailEl).forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const vacancyId = btn.dataset.agVacancyFill;
+                const row = btn.closest('[data-ag-vacancy-row]');
+                const input = row?.querySelector('[data-ag-vacancy-fill-id]');
+                const clientUserId = memberClientId({ clientUserId: input?.value?.trim() });
+                if (!vacancyId || !clientUserId) {
+                    showAlert(alert, 'Informe o ID do jogador para preencher a vaga.');
+                    return;
+                }
+                btn.disabled = true;
+                try {
+                    await api.fillRosterVacancy(teamId, vacancyId, clientUserId);
+                    showAlert(success, 'Vaga preenchida. O jogador entrou na escalação e no time, se necessário.', 'success');
+                    if (input) input.value = '';
+                    await onChanged();
+                } catch (err) {
+                    showAlert(alert, formatTeamInviteError(err));
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        });
+
+        $$('[data-ag-vacancy-forfeit]', detailEl).forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const vacancyId = btn.dataset.agVacancyForfeit;
+                if (!vacancyId) return;
+                const vacancies = callbacks.rosterVacancies || [];
+                const vacancy = vacancies.find((v) => String(v.id ?? v.vacancyId) === String(vacancyId)) || { id: vacancyId };
+                const confirmed = await showForfeitVacancyConfirmModal(vacancy);
+                if (!confirmed) return;
+                btn.disabled = true;
+                try {
+                    await api.forfeitRosterVacancy(teamId, vacancyId);
+                    showAlert(success, 'Vaga confirmada sem reposição.', 'success');
+                    await onChanged();
+                } catch (err) {
+                    showAlert(alert, err.message || 'Não foi possível confirmar a vaga.');
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        });
+
+        detailEl.querySelector('[data-ag-reallocate-submit]')?.addEventListener('click', async () => {
+            const slug = detailEl.querySelector('[data-ag-reallocate-slug]')?.value?.trim();
+            const outClientUserId = memberClientId({ clientUserId: detailEl.querySelector('[data-ag-reallocate-out]')?.value?.trim() });
+            const inClientUserId = memberClientId({ clientUserId: detailEl.querySelector('[data-ag-reallocate-in]')?.value?.trim() });
+            if (!slug || !outClientUserId || !inClientUserId) {
+                showAlert(alert, 'Informe torneio, ID do jogador que sai e ID do jogador que entra.');
+                return;
+            }
+            if (!confirm('Realocar escalação neste torneio? Bloqueado se houver partida agendada ou em andamento.')) return;
+            const btn = detailEl.querySelector('[data-ag-reallocate-submit]');
+            if (btn) btn.disabled = true;
+            try {
+                await api.reallocateTeamRoster(teamId, {
+                    tournamentSlug: slug,
+                    outClientUserId,
+                    inClientUserId,
+                });
+                showAlert(success, 'Escalação realocada com sucesso.', 'success');
+                await onChanged();
+            } catch (err) {
+                showAlert(alert, formatTeamMemberRemoveError(err));
+            } finally {
+                if (btn) btn.disabled = false;
+            }
         });
 
         detailEl.querySelector('[data-ag-add-member]')?.addEventListener('click', async () => {
@@ -5378,13 +6458,17 @@
                 showAlert(alert, 'Informe o ID do jogador.');
                 return;
             }
+            const btn = detailEl.querySelector('[data-ag-add-member]');
+            if (btn) btn.disabled = true;
             try {
-                await api.addTeamMember(teamId, clientUserId);
-                showAlert(success, 'Jogador adicionado.', 'success');
+                await api.inviteTeamMember(teamId, clientUserId);
+                showAlert(success, 'Convite enviado! O jogador precisa aceitar para entrar no time.', 'success');
                 if (input) input.value = '';
                 await onChanged();
             } catch (err) {
-                showAlert(alert, err.message || 'Não foi possível adicionar o jogador.');
+                showAlert(alert, formatTeamInviteError(err));
+            } finally {
+                if (btn) btn.disabled = false;
             }
         });
 
@@ -5831,12 +6915,12 @@
             const sections = [];
             for (const t of tournaments) {
                 try {
-                    const matches = (await api.listMatches(t.slug)).data || [];
+                    const matches = unwrapMatchesList(await api.listMatches(t.slug));
                     if (!matches.length) continue;
-                    sections.push(`<section class="ag-match-section"><h3>${tournamentNameHtml(t)}</h3>
-                        <div class="ag-table-wrap"><table class="ag-table"><thead><tr><th>#</th><th>Confronto</th><th>Placar</th><th>Status</th><th>Data</th></tr></thead><tbody>
-                        ${matches.map((m) => `<tr><td>${m.matchNumber ?? '—'}</td><td>${escapeHtml(m.homeParticipantName || 'TBD')} vs ${escapeHtml(m.awayParticipantName || 'TBD')}</td><td>${m.homeScore ?? '—'} × ${m.awayScore ?? '—'}</td><td>${escapeHtml(MATCH_STATUS[m.status] || m.status)}</td><td>${formatDate(m.scheduledAt)}</td></tr>`).join('')}
-                        </tbody></table></div></section>`);
+                    const nameMap = buildParticipantNameMap(await fetchTournamentParticipants(t.slug, t));
+                    const groupsHtml = renderMatchesGroupsHtml(matches, nameMap);
+                    if (!groupsHtml) continue;
+                    sections.push(`<section class="ag-match-section"><h3>${tournamentNameHtml(t)}</h3>${groupsHtml}</section>`);
                 } catch { /* skip */ }
             }
             if (!sections.length) { empty.hidden = false; return; }
@@ -5871,11 +6955,17 @@
     };
 
     function boot() {
+        let showGlobalBar = false;
         $$('.ag-client').forEach((root) => {
             const page = root.dataset.agPage;
             if (redirectIfLoggedInOnAuthPage(root)) return;
+            if (api.isLoggedIn() && page !== 'login' && page !== 'cadastro') {
+                initGlobalClientBar(root);
+                showGlobalBar = true;
+            }
             if (handlers[page]) handlers[page](root);
         });
+        if (showGlobalBar) startGlobalBarPolling();
     }
 
     if (document.readyState === 'loading') {

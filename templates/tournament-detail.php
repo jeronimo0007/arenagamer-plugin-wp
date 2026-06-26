@@ -27,6 +27,10 @@
 
             <div class="ag-tournament-detail__participants" data-ag-detail-participants hidden></div>
 
+            <div class="ag-tournament-detail__matches" data-ag-detail-matches hidden></div>
+
+            <div class="ag-tournament-detail__standings" data-ag-detail-standings hidden></div>
+
             <div class="ag-tournament-detail__revenue" data-ag-detail-revenue hidden></div>
 
             <div class="ag-tournament-media ag-tournament-detail__streams" data-ag-tournament-media hidden></div>

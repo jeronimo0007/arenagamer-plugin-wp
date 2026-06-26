@@ -58,19 +58,17 @@
 
             <div data-ag-wallet-panel="comprar" hidden>
                 <div class="ag-card ag-card--narrow ag-wallet-form game-card game-card--style2">
-                    <p class="ag-muted">Selecione um pacote ou informe um valor.</p>
+                    <p class="ag-muted">Selecione um pacote ou informe um valor (1 crédito = R$ 1,00).</p>
                     <div class="ag-packages" data-ag-packages></div>
                     <form class="ag-form" data-ag-form="deposit">
                         <label class="ag-field">
                             <span>Valor (créditos)</span>
                             <input type="number" name="amount" min="0.01" step="0.01" required placeholder="Ex.: 50.00">
                         </label>
-                        <label class="ag-field">
-                            <span>Descrição (opcional)</span>
-                            <input type="text" name="description" maxlength="200" placeholder="Recarga via site">
-                        </label>
-                        <button type="submit" class="ag-btn ag-btn--primary ag-btn--block">Confirmar compra</button>
+                        <button type="submit" class="ag-btn ag-btn--primary ag-btn--block">Gerar fatura de pagamento</button>
                     </form>
+                    <p class="ag-note ag-muted">Ao confirmar, geramos uma fatura para pagamento. O saldo é creditado automaticamente após o pagamento.</p>
+                    <div class="ag-purchase-result" data-ag-purchase-result hidden></div>
                 </div>
             </div>
 

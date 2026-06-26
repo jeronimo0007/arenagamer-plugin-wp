@@ -10,56 +10,97 @@ class AG_Shortcodes {
     private static array $tags = [];
 
     public static function init(): void {
-        self::register_tag('pagina login', [self::class, 'login']);
+        add_filter('the_content', [self::class, 'normalize_legacy_shortcodes'], 9);
+
+        self::register_tag('pagina_login', [self::class, 'login']);
         self::register_tag('arenagamer_login', [self::class, 'login']);
 
-        self::register_tag('pagina cadastro', [self::class, 'register']);
+        self::register_tag('pagina_cadastro', [self::class, 'register']);
         self::register_tag('arenagamer_cadastro', [self::class, 'register']);
         self::register_tag('arenagamer_register', [self::class, 'register']);
 
-        self::register_tag('pagina menu', [self::class, 'menu']);
+        self::register_tag('pagina_menu', [self::class, 'menu']);
         self::register_tag('arenagamer_menu', [self::class, 'menu']);
 
-        self::register_tag('pagina torneios', [self::class, 'tournaments']);
+        self::register_tag('pagina_torneios', [self::class, 'tournaments']);
         self::register_tag('arenagamer_torneios', [self::class, 'tournaments']);
 
-        self::register_tag('pagina participando', [self::class, 'participating']);
+        self::register_tag('pagina_participando', [self::class, 'participating']);
         self::register_tag('arenagamer_participando', [self::class, 'participating']);
-        self::register_tag('pagina meus torneios', [self::class, 'my_tournaments']);
+        self::register_tag('pagina_meus_torneios', [self::class, 'my_tournaments']);
         self::register_tag('arenagamer_meus_torneios', [self::class, 'my_tournaments']);
 
-        self::register_tag('pagina torneio', [self::class, 'tournament_detail']);
+        self::register_tag('pagina_torneio', [self::class, 'tournament_detail']);
         self::register_tag('arenagamer_torneio', [self::class, 'tournament_detail']);
 
-        self::register_tag('pagina creditos', [self::class, 'wallet']);
+        self::register_tag('pagina_creditos', [self::class, 'wallet']);
         self::register_tag('arenagamer_creditos', [self::class, 'wallet']);
         self::register_tag('arenagamer_carteira', [self::class, 'wallet']);
 
-        self::register_tag('pagina comprar creditos', [self::class, 'wallet']);
+        self::register_tag('pagina_comprar_creditos', [self::class, 'wallet']);
         self::register_tag('arenagamer_comprar_creditos', [self::class, 'wallet']);
 
-        self::register_tag('pagina partidas', [self::class, 'matches']);
+        self::register_tag('pagina_partidas', [self::class, 'matches']);
         self::register_tag('arenagamer_partidas', [self::class, 'matches']);
 
-        self::register_tag('pagina times', [self::class, 'teams']);
+        self::register_tag('pagina_times', [self::class, 'teams']);
         self::register_tag('arenagamer_times', [self::class, 'teams']);
 
-        self::register_tag('pagina perfil', [self::class, 'profile']);
+        self::register_tag('pagina_perfil', [self::class, 'profile']);
         self::register_tag('arenagamer_perfil', [self::class, 'profile']);
 
-        self::register_tag('pagina jogador', [self::class, 'player_profile']);
+        self::register_tag('pagina_jogador', [self::class, 'player_profile']);
         self::register_tag('arenagamer_jogador', [self::class, 'player_profile']);
 
-        self::register_tag('pagina time', [self::class, 'team_detail']);
+        self::register_tag('pagina_time', [self::class, 'team_detail']);
         self::register_tag('arenagamer_time', [self::class, 'team_detail']);
 
-        self::register_tag('pagina dashboard', [self::class, 'dashboard']);
-        self::register_tag('pagina painel', [self::class, 'dashboard']);
+        self::register_tag('pagina_dashboard', [self::class, 'dashboard']);
+        self::register_tag('pagina_painel', [self::class, 'dashboard']);
         self::register_tag('arenagamer_dashboard', [self::class, 'dashboard']);
         self::register_tag('arenagamer_painel', [self::class, 'dashboard']);
 
-        self::register_tag('pagina criar torneio', [self::class, 'create_tournament']);
+        self::register_tag('pagina_criar_torneio', [self::class, 'create_tournament']);
         self::register_tag('arenagamer_criar_torneio', [self::class, 'create_tournament']);
+    }
+
+    /** @return array<string, string> legado com espaço => tag válida */
+    public static function legacy_shortcode_map(): array {
+        return [
+            'pagina comprar creditos' => 'pagina_comprar_creditos',
+            'pagina meus torneios'    => 'pagina_meus_torneios',
+            'pagina criar torneio'    => 'pagina_criar_torneio',
+            'pagina participando'     => 'pagina_participando',
+            'pagina cadastro'         => 'pagina_cadastro',
+            'pagina dashboard'        => 'pagina_dashboard',
+            'pagina torneios'         => 'pagina_torneios',
+            'pagina creditos'         => 'pagina_creditos',
+            'pagina partidas'         => 'pagina_partidas',
+            'pagina torneio'          => 'pagina_torneio',
+            'pagina jogador'          => 'pagina_jogador',
+            'pagina perfil'           => 'pagina_perfil',
+            'pagina painel'           => 'pagina_painel',
+            'pagina login'            => 'pagina_login',
+            'pagina times'            => 'pagina_times',
+            'pagina menu'             => 'pagina_menu',
+            'pagina time'             => 'pagina_time',
+        ];
+    }
+
+    public static function normalize_legacy_shortcodes(string $content): string {
+        if ($content === '' || !str_contains($content, '[pagina ')) {
+            return $content;
+        }
+
+        $map = self::legacy_shortcode_map();
+        uksort($map, static fn(string $a, string $b): int => strlen($b) <=> strlen($a));
+
+        foreach ($map as $legacy => $valid) {
+            $pattern = '/\[' . preg_quote($legacy, '/') . '(?=\s|\]|\/)/';
+            $content = preg_replace($pattern, '[' . $valid, $content) ?? $content;
+        }
+
+        return $content;
     }
 
     /** @return array<string, array{filter: string, title: string, subtitle: string}> */
@@ -117,75 +158,81 @@ class AG_Shortcodes {
         return [
             [
                 'primary' => '[arenagamer_login]',
-                'alt'     => '[pagina login]',
+                'alt'     => '[pagina_login]',
                 'extra'   => '',
                 'desc'    => 'Login (clientes, staff=false)',
             ],
             [
                 'primary' => '[arenagamer_cadastro]',
-                'alt'     => '[pagina cadastro]',
+                'alt'     => '[pagina_cadastro]',
                 'extra'   => '[arenagamer_register]',
                 'desc'    => 'Cadastro de cliente',
             ],
             [
                 'primary' => '[arenagamer_torneios]',
-                'alt'     => '[pagina torneios]',
+                'alt'     => '[pagina_torneios]',
                 'extra'   => 'view: abertos (padrão), previstos, andamento, finalizados, cancelados, todos',
                 'desc'    => 'Listagem com abas (Todos, Inscrições abertas, Previstos…). O view define a aba inicial.',
             ],
             [
                 'primary' => '[arenagamer_participando]',
-                'alt'     => '[pagina participando]',
+                'alt'     => '[pagina_participando]',
                 'extra'   => 'view: meus-torneios (padrão), partidas',
                 'desc'    => 'Área logada. Ex.: [arenagamer_participando view="partidas"]',
             ],
             [
                 'primary' => '[arenagamer_torneio slug="x"]',
-                'alt'     => '[pagina torneio slug="x"]',
+                'alt'     => '[pagina_torneio slug="x"]',
                 'extra'   => '',
                 'desc'    => 'Detalhe e inscrição. Use [arenagamer_torneio] na página e ?slug= na URL.',
             ],
             [
                 'primary' => '[arenagamer_creditos]',
-                'alt'     => '[pagina creditos]',
+                'alt'     => '[pagina_creditos]',
                 'extra'   => '[arenagamer_carteira]',
                 'desc'    => 'Carteira: histórico, compra e saque',
             ],
             [
                 'primary' => '[arenagamer_times]',
-                'alt'     => '[pagina times]',
+                'alt'     => '[pagina_times]',
                 'extra'   => '',
                 'desc'    => 'Gerenciar times',
             ],
             [
                 'primary' => '[arenagamer_perfil]',
-                'alt'     => '[pagina perfil]',
+                'alt'     => '[pagina_perfil]',
                 'extra'   => '',
                 'desc'    => 'Perfil do usuário',
             ],
             [
                 'primary' => '[arenagamer_jogador]',
-                'alt'     => '[pagina jogador]',
+                'alt'     => '[pagina_jogador]',
                 'extra'   => '',
                 'desc'    => 'Perfil público de jogador. Use /jogador/123 ou ?id=123 na URL.',
             ],
             [
                 'primary' => '[arenagamer_time]',
-                'alt'     => '[pagina time]',
+                'alt'     => '[pagina_time]',
                 'extra'   => '',
                 'desc'    => 'Detalhes do time. Use /time/123 ou ?id=123 na URL.',
             ],
             [
                 'primary' => '[arenagamer_dashboard]',
-                'alt'     => '[pagina painel]',
+                'alt'     => '[pagina_painel]',
                 'extra'   => '[arenagamer_painel]',
                 'desc'    => 'Painel do cliente (saldo, atalhos)',
             ],
             [
                 'primary' => '[arenagamer_menu]',
-                'alt'     => '[pagina menu]',
+                'alt'     => '[pagina_menu]',
                 'extra'   => '',
                 'desc'    => 'Menu de navegação',
+            ],
+            [
+                'primary' => '[arenagamer_criar_torneio]',
+                'alt'     => '[pagina_criar_torneio]',
+                'extra'   => '',
+                'desc'    => 'Formulário de criação de torneio',
             ],
         ];
     }
@@ -333,7 +380,7 @@ class AG_Shortcodes {
 
     public static function tournament_detail($atts): string {
         AG_Assets::ensure_loaded();
-        $atts = shortcode_atts(['slug' => ''], $atts, 'pagina torneio');
+        $atts = shortcode_atts(['slug' => ''], $atts, 'pagina_torneio');
         ob_start();
         $url_slug = AG_Rewrites::resolve_slug_from_request();
         $attr_slug = sanitize_title($atts['slug']);

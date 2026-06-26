@@ -23,15 +23,17 @@ class AG_Api_Proxy {
         check_ajax_referer('arenagamer_api', 'nonce');
 
         $settings = AG_Settings::get();
-        $api_url = rtrim($settings['api_url'] ?? '', '/');
-
-        if ($api_url === '') {
-            wp_send_json_error(['message' => 'URL da API não configurada. Vá em Configurações → ArenaGamer Cliente.'], 500);
-        }
 
         $path = self::sanitize_api_path(wp_unslash($_POST['path'] ?? ''));
         if ($path === '') {
             wp_send_json_error(['message' => 'Caminho da API inválido.'], 400);
+        }
+
+        $service = self::resolve_service($path);
+        $api_url = rtrim($settings[$service . '_url'] ?? '', '/');
+
+        if ($api_url === '') {
+            wp_send_json_error(['message' => 'URL da API (' . $service . ') não configurada. Vá em Configurações → ArenaGamer Cliente.'], 500);
         }
 
         $query_raw = wp_unslash($_POST['query'] ?? '');
@@ -112,6 +114,34 @@ class AG_Api_Proxy {
         }
 
         wp_send_json_success($data);
+    }
+
+    /**
+     * Define a qual microsserviço o caminho pertence.
+     * Retorna a chave do serviço: auth | public | common | admin.
+     */
+    private static function resolve_service(string $path): string {
+        $base = strtok($path, '?') ?: $path;
+
+        // Auth: autenticação, sessão e perfil de usuário.
+        if (strpos($base, '/api/v1/public/auth') === 0
+            || strpos($base, '/api/v1/common/auth') === 0
+            || strpos($base, '/api/v1/common/users') === 0) {
+            return 'auth';
+        }
+
+        // Admin: operações administrativas.
+        if (strpos($base, '/api/v1/admin') === 0) {
+            return 'admin';
+        }
+
+        // Public: catálogo público (demais caminhos /public).
+        if (strpos($base, '/api/v1/public') === 0) {
+            return 'public';
+        }
+
+        // Common: torneios, times, carteira, jogadores, presets, etc.
+        return 'common';
     }
 
     private static function needs_catalog_basic_auth(string $path, string $method): bool {
