@@ -45,10 +45,17 @@ ArenaGamer_Cliente_Plugin::init();
 
 register_activation_hook(__FILE__, static function (): void {
     update_option('ag_cliente_version', AG_CLIENTE_VERSION);
+    AG_Pages::create_default_pages();
+    update_option('ag_cliente_pages_created', '1');
     AG_Rewrites::flush();
 });
 
 add_action('init', static function (): void {
+    if (get_option('ag_cliente_pages_created', '') !== '1') {
+        AG_Pages::create_default_pages();
+        update_option('ag_cliente_pages_created', '1');
+    }
+
     $stored = get_option('ag_cliente_version', '');
     if ($stored === AG_CLIENTE_VERSION) {
         return;

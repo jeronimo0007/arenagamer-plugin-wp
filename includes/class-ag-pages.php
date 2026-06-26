@@ -71,6 +71,60 @@ class AG_Pages {
         ];
     }
 
+    /**
+     * Cria automaticamente as páginas padrão (com o shortcode correspondente)
+     * caso ainda não existam. Idempotente: páginas já existentes são ignoradas.
+     *
+     * @return array<int, array{title: string, slug: string, action: string}>
+     */
+    public static function create_default_pages(): array {
+        $results = [];
+
+        foreach (self::setup_guide() as $page) {
+            $slug = sanitize_title($page['slug']);
+            if ($slug === '') {
+                continue;
+            }
+
+            $existing = get_page_by_path($slug, OBJECT, 'page');
+            if ($existing instanceof WP_Post) {
+                $results[] = ['title' => $page['title'], 'slug' => $slug, 'action' => 'exists'];
+                continue;
+            }
+
+            $post_id = wp_insert_post([
+                'post_title'   => $page['title'],
+                'post_name'    => $slug,
+                'post_content' => $page['shortcode'],
+                'post_status'  => 'publish',
+                'post_type'    => 'page',
+                'post_author'  => self::default_author_id(),
+            ], true);
+
+            $results[] = [
+                'title'  => $page['title'],
+                'slug'   => $slug,
+                'action' => is_wp_error($post_id) ? 'error' : 'created',
+            ];
+        }
+
+        self::$resolved = [];
+
+        return $results;
+    }
+
+    private static function default_author_id(): int {
+        if (function_exists('get_current_user_id')) {
+            $current = (int) get_current_user_id();
+            if ($current > 0) {
+                return $current;
+            }
+        }
+
+        $admins = get_users(['role' => 'administrator', 'number' => 1, 'fields' => 'ID']);
+        return !empty($admins) ? (int) $admins[0] : 0;
+    }
+
     public static function resolved_url(string $key): string {
         $settings = AG_Settings::get();
         $overrides = [
