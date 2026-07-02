@@ -25,9 +25,6 @@
                     <a href="<?php echo esc_url(AG_Pages::resolved_url('torneios')); ?>" class="ag-dashboard-nav__item game-card game-card--style2" data-ag-nav-link="torneios">
                         <span>Explorar torneios</span>
                     </a>
-                    <a href="<?php echo esc_url(AG_Pages::resolved_url('criar-torneio')); ?>" class="ag-dashboard-nav__item game-card game-card--style2" data-ag-nav-link="criar-torneio">
-                        <span>Criar torneio</span>
-                    </a>
                     <a href="<?php echo esc_url(AG_Pages::resolved_url('participando')); ?>" class="ag-dashboard-nav__item game-card game-card--style2" data-ag-nav-link="participando">
                         <span>Torneios e Partidas</span>
                     </a>

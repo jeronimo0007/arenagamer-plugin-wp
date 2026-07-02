@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: ArenaGamer Cliente
+ * Plugin Name: ArenaGamer Jogador
  * Plugin URI:  https://arenagamer.com
- * Description: Frontend para clientes ArenaGamer — login, torneios, inscrições, créditos e partidas via API.
+ * Description: Frontend para jogadores ArenaGamer — login, torneios, inscrições, times, carteira e partidas via API.
  * Version:     1.13.0
  * Author:      ArenaGamer
  * Text Domain: arenagamer-cliente
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('AG_CLIENTE_VERSION', '1.19.0');
+define('AG_CLIENTE_VERSION', '1.20.0');
 define('AG_CLIENTE_PATH', plugin_dir_path(__FILE__));
 define('AG_CLIENTE_URL', plugin_dir_url(__FILE__));
 

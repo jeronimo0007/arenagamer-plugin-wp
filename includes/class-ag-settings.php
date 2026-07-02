@@ -15,10 +15,9 @@ class AG_Settings {
 
     public static function get(): array {
         $defaults = [
-            'auth_url'         => 'https://auth.omnyarena.com',
-            'public_url'       => 'https://public.omnyarena.com',
-            'common_url'       => 'https://common.omnyarena.com',
-            'admin_url'        => 'https://admin.omnyarena.com',
+            'auth_url'         => 'http://localhost:8081',
+            'public_url'       => 'http://localhost:8084',
+            'common_url'       => 'http://localhost:8082',
             'catalog_email'    => '',
             'catalog_pass'     => '',
             'login_url'        => '',
@@ -34,6 +33,12 @@ class AG_Settings {
 
         $saved = get_option(self::OPTION_KEY, []);
         $parsed = wp_parse_args(is_array($saved) ? $saved : [], $defaults);
+        if (defined('AG_CATALOG_EMAIL')) {
+            $parsed['catalog_email'] = AG_CATALOG_EMAIL;
+        }
+        if (defined('AG_CATALOG_PASS')) {
+            $parsed['catalog_pass'] = AG_CATALOG_PASS;
+        }
         $parsed = AG_Pages::apply_url_defaults($parsed);
 
         if (!empty($parsed['tournament_url'])) {
@@ -45,8 +50,8 @@ class AG_Settings {
 
     public static function add_menu(): void {
         add_options_page(
-            'ArenaGamer Cliente',
-            'ArenaGamer Cliente',
+            'ArenaGamer Jogador',
+            'ArenaGamer Jogador',
             'manage_options',
             'arenagamer-cliente',
             [self::class, 'render_page']
@@ -65,7 +70,6 @@ class AG_Settings {
             'auth_url'        => esc_url_raw(rtrim($input['auth_url'] ?? '', '/')),
             'public_url'      => esc_url_raw(rtrim($input['public_url'] ?? '', '/')),
             'common_url'      => esc_url_raw(rtrim($input['common_url'] ?? '', '/')),
-            'admin_url'       => esc_url_raw(rtrim($input['admin_url'] ?? '', '/')),
             'catalog_email'   => sanitize_email($input['catalog_email'] ?? ''),
             'catalog_pass'    => sanitize_text_field($input['catalog_pass'] ?? ''),
             'login_url'        => esc_url_raw($input['login_url'] ?? ''),
@@ -86,9 +90,16 @@ class AG_Settings {
         }
 
         $settings = self::get();
+        $catalog_mismatch = self::has_local_catalog_mismatch($settings);
         ?>
         <div class="wrap">
-            <h1>ArenaGamer Cliente — Configurações</h1>
+            <h1>ArenaGamer Jogador — Configurações</h1>
+            <?php if ($catalog_mismatch) : ?>
+            <div class="notice notice-warning">
+                <p><strong>Catálogo público:</strong> a API local (<code><?php echo esc_html($settings['public_url']); ?></code>) não aceita as credenciais de produção (<code><?php echo esc_html($settings['catalog_email']); ?></code>).
+                Informe abaixo o <strong>e-mail e senha de um usuário cadastrado no ambiente local</strong> — normalmente os mesmos usados no login.</p>
+            </div>
+            <?php endif; ?>
             <form method="post" action="options.php">
                 <?php settings_fields('arenagamer_cliente_group'); ?>
                 <table class="form-table" role="presentation">
@@ -122,19 +133,11 @@ class AG_Settings {
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="ag_admin_url">URL — Admin</label></th>
-                        <td>
-                            <input type="url" id="ag_admin_url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[admin_url]"
-                                   value="<?php echo esc_attr($settings['admin_url']); ?>" class="regular-text">
-                            <p class="description">Operações administrativas: <code>/api/v1/admin/*</code>.</p>
-                        </td>
-                    </tr>
-                    <tr>
                         <th scope="row"><label for="ag_catalog_email">E-mail (catálogo público)</label></th>
                         <td>
                             <input type="email" id="ag_catalog_email" name="<?php echo esc_attr(self::OPTION_KEY); ?>[catalog_email]"
                                    value="<?php echo esc_attr($settings['catalog_email']); ?>" class="regular-text">
-                            <p class="description">Credencial HTTP Basic para listar torneios públicos (GET /api/v1/public/tournaments).</p>
+                            <p class="description">Credencial HTTP Basic para o catálogo público (<code>GET /api/v1/public/*</code>). No ambiente local, use um usuário cadastrado na API (mesmo e-mail/senha do login).</p>
                         </td>
                     </tr>
                     <tr>
@@ -257,5 +260,22 @@ class AG_Settings {
             </table>
         </div>
         <?php
+    }
+
+    /** @param array<string, string> $settings */
+    private static function has_local_catalog_mismatch(array $settings): bool {
+        $public_url = strtolower($settings['public_url'] ?? '');
+        $email = strtolower($settings['catalog_email'] ?? '');
+        if ($public_url === '' || $email === '') {
+            return false;
+        }
+
+        $is_local_api = str_contains($public_url, 'localhost')
+            || str_contains($public_url, '127.0.0.1');
+        if (!$is_local_api) {
+            return false;
+        }
+
+        return str_contains($email, 'omnyarena.com');
     }
 }

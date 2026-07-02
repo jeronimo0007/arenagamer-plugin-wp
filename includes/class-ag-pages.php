@@ -46,7 +46,6 @@ class AG_Pages {
         'jogador'          => ['titles' => ['Perfil do Jogador', 'Jogador'], 'slugs' => ['jogador', 'perfil-jogador']],
         'time'             => ['titles' => ['Detalhes do Time', 'Time'],       'slugs' => ['time', 'detalhes-time']],
         'torneio'          => ['titles' => ['Detalhes do Torneio'],            'slugs' => ['detalhes-torneio']],
-        'criar-torneio'    => ['titles' => ['Criar Torneio'],                  'slugs' => ['criar-torneio']],
     ];
 
     /** @var array<string, string> */
@@ -67,7 +66,6 @@ class AG_Pages {
             ['title' => 'Perfil do Jogador',   'slug' => 'jogador',          'shortcode' => '[pagina_jogador]'],
             ['title' => 'Detalhes do Time',    'slug' => 'time',             'shortcode' => '[pagina_time]'],
             ['title' => 'Detalhes do Torneio', 'slug' => 'detalhes-torneio', 'shortcode' => '[pagina_torneio]'],
-            ['title' => 'Criar Torneio',       'slug' => 'criar-torneio',    'shortcode' => '[pagina_criar_torneio]'],
         ];
     }
 

@@ -54,7 +54,7 @@
             return dedupeErrorMessage(msgs.join(', '));
         }
 
-        const msg = data.message || nested?.message || '';
+        const msg = data.message || nested?.message || data.error || nested?.error || '';
         return dedupeErrorMessage(msg);
     }
 
@@ -411,33 +411,6 @@
 
         getTournament(slug) {
             return this.request(`/api/v1/common/tournaments/${encodeURIComponent(slug)}`);
-        }
-
-        createTournament(body) {
-            return this.request('/api/v1/common/tournaments', {
-                method: 'POST',
-                body,
-            });
-        }
-
-        updateTournamentStatus(slug, status) {
-            return this.request(
-                `/api/v1/common/tournaments/${encodeURIComponent(slug)}/status?status=${encodeURIComponent(status)}`,
-                { method: 'PUT' }
-            );
-        }
-
-        getTournamentEntryFeeRevenue(slug, options = {}) {
-            const opts = options || {};
-            const query = {};
-            const clientUserId = opts.clientUserId;
-            if (clientUserId != null && clientUserId !== '') {
-                query.clientUserId = clientUserId;
-            }
-            return this.request(
-                `/api/v1/common/tournaments/${encodeURIComponent(slug)}/entry-fees/revenue`,
-                { query }
-            );
         }
 
         listTournamentParticipants(slug, options = {}) {

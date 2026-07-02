@@ -10,7 +10,6 @@ class AG_Api_Proxy {
         '/api/v1/public/plans',
         '/api/v1/public/tournaments',
         '/api/v1/public/presets',
-        '/api/v1/public/tournament-pricing',
         '/api/v1/public/team-settings',
     ];
 
@@ -33,7 +32,7 @@ class AG_Api_Proxy {
         $api_url = rtrim($settings[$service . '_url'] ?? '', '/');
 
         if ($api_url === '') {
-            wp_send_json_error(['message' => 'URL da API (' . $service . ') não configurada. Vá em Configurações → ArenaGamer Cliente.'], 500);
+            wp_send_json_error(['message' => 'URL da API (' . $service . ') não configurada. Vá em Configurações → ArenaGamer Jogador.'], 500);
         }
 
         $query_raw = wp_unslash($_POST['query'] ?? '');
@@ -59,7 +58,7 @@ class AG_Api_Proxy {
             $email = $settings['catalog_email'] ?? '';
             $pass = $settings['catalog_pass'] ?? '';
             if ($email === '' || $pass === '') {
-                wp_send_json_error(['message' => 'Configure e-mail e senha do catálogo em Configurações → ArenaGamer Cliente.'], 500);
+                wp_send_json_error(['message' => 'Configure e-mail e senha do catálogo em Configurações → ArenaGamer Jogador.'], 500);
             }
             $headers['Authorization'] = 'Basic ' . base64_encode($email . ':' . $pass);
         }
@@ -91,12 +90,12 @@ class AG_Api_Proxy {
         if ($status >= 400) {
             if (!is_array($data)) {
                 wp_send_json_error([
-                    'message' => 'Erro na API',
+                    'message' => self::format_api_error_message($path, $method, $status, []),
                     'status'  => $status,
                 ], $status);
             }
             wp_send_json_error([
-                'message' => $data['message'] ?? 'Erro na API',
+                'message' => self::format_api_error_message($path, $method, $status, $data),
                 'code'    => $data['code'] ?? null,
                 'data'    => $data,
             ], $status);
@@ -118,7 +117,7 @@ class AG_Api_Proxy {
 
     /**
      * Define a qual microsserviço o caminho pertence.
-     * Retorna a chave do serviço: auth | public | common | admin.
+     * Retorna a chave do serviço: auth | public | common.
      */
     private static function resolve_service(string $path): string {
         $base = strtok($path, '?') ?: $path;
@@ -128,11 +127,6 @@ class AG_Api_Proxy {
             || strpos($base, '/api/v1/common/auth') === 0
             || strpos($base, '/api/v1/common/users') === 0) {
             return 'auth';
-        }
-
-        // Admin: operações administrativas.
-        if (strpos($base, '/api/v1/admin') === 0) {
-            return 'admin';
         }
 
         // Public: catálogo público (demais caminhos /public).
@@ -173,5 +167,24 @@ class AG_Api_Proxy {
         }
 
         return $path;
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function format_api_error_message(string $path, string $method, int $status, array $data): string {
+        if ($status === 401 && self::needs_catalog_basic_auth($path, $method)) {
+            return 'Credenciais do catálogo inválidas. Em Configurações → ArenaGamer Jogador, use e-mail e senha de um usuário cadastrado no ambiente local (as mesmas do login).';
+        }
+
+        $message = trim((string) ($data['message'] ?? ''));
+        if ($message !== '') {
+            return $message;
+        }
+
+        $error = trim((string) ($data['error'] ?? ''));
+        if ($error !== '') {
+            return $error;
+        }
+
+        return 'Erro na API';
     }
 }
