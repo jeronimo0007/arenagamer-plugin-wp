@@ -60,8 +60,6 @@ class AG_Shortcodes {
         self::register_tag('arenagamer_dashboard', [self::class, 'dashboard']);
         self::register_tag('arenagamer_painel', [self::class, 'dashboard']);
 
-        self::register_tag('pagina_criar_torneio', [self::class, 'create_tournament']);
-        self::register_tag('arenagamer_criar_torneio', [self::class, 'create_tournament']);
     }
 
     /** @return array<string, string> legado com espaço => tag válida */
@@ -69,7 +67,6 @@ class AG_Shortcodes {
         return [
             'pagina comprar creditos' => 'pagina_comprar_creditos',
             'pagina meus torneios'    => 'pagina_meus_torneios',
-            'pagina criar torneio'    => 'pagina_criar_torneio',
             'pagina participando'     => 'pagina_participando',
             'pagina cadastro'         => 'pagina_cadastro',
             'pagina dashboard'        => 'pagina_dashboard',
@@ -228,12 +225,6 @@ class AG_Shortcodes {
                 'extra'   => '',
                 'desc'    => 'Menu de navegação',
             ],
-            [
-                'primary' => '[arenagamer_criar_torneio]',
-                'alt'     => '[pagina_criar_torneio]',
-                'extra'   => '',
-                'desc'    => 'Formulário de criação de torneio',
-            ],
         ];
     }
 
@@ -372,10 +363,6 @@ class AG_Shortcodes {
 
     public static function dashboard(): string {
         return self::render('dashboard');
-    }
-
-    public static function create_tournament(): string {
-        return self::render('create-tournament');
     }
 
     public static function tournament_detail($atts): string {

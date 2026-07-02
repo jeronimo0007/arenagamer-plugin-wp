@@ -68,7 +68,6 @@ class AG_Assets {
                 'auth'   => $settings['auth_url'] ?? '',
                 'public' => $settings['public_url'] ?? '',
                 'common' => $settings['common_url'] ?? '',
-                'admin'  => $settings['admin_url'] ?? '',
             ],
             'loginUrl'       => $page_urls['login'] ?? $settings['login_url'],
             'cadastroUrl'    => $page_urls['cadastro'] ?? '',

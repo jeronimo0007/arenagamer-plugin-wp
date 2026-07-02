@@ -71,12 +71,6 @@
         ENTRY_FEES: 'Por arrecadação',
     };
 
-    const ENTRY_FEE_STATUS_LABELS = {
-        HELD: 'Retida',
-        REFUNDED: 'Reembolsada',
-        CAPTURED: 'Capturada',
-    };
-
     const FORMAT_LABELS = {
         SOLO: 'Individual',
         TEAM: 'Times',
@@ -84,7 +78,7 @@
 
     const PROTECTED_PAGES = [
         'participando', 'meus-torneios', 'creditos', 'comprar-creditos', 'carteira',
-        'partidas', 'times', 'time', 'perfil', 'painel', 'dashboard', 'criar-torneio',
+        'partidas', 'times', 'time', 'perfil', 'painel', 'dashboard',
     ];
 
     const GLOBAL_BAR_POLL_MS = 10000;
@@ -1690,23 +1684,6 @@
         return Number.isFinite(fee) && fee > 0 ? fee : 0;
     }
 
-    function isTournamentOrganizer(t) {
-        if (!api.isLoggedIn() || !t) return false;
-        const ownerId = t.ownerClientUserId
-            ?? t.ownerId
-            ?? t.organizerClientUserId
-            ?? t.createdByClientUserId
-            ?? t.owner?.clientUserId
-            ?? t.owner?.id
-            ?? t.organizer?.clientUserId;
-        const myId = getLoggedUserClientId();
-        return !!(myId && ownerId != null && Number(ownerId) === Number(myId));
-    }
-
-    function unwrapRevenuePayload(res) {
-        return res?.data ?? res ?? {};
-    }
-
     async function fetchWalletAvailableBalance() {
         const res = await api.getBalance();
         const w = res?.data ?? res;
@@ -2141,6 +2118,64 @@
         return map;
     }
 
+    function rememberParticipantIds(item, ids) {
+        [item?.participantId, item?.id, item?.participant?.id].forEach((id) => {
+            if (id != null && id !== '') ids.add(String(id));
+        });
+    }
+
+    /** IDs de participante (inscrição) vinculados ao jogador logado neste torneio. */
+    function buildLoggedUserParticipantIds(participantsPayload, userCtx, tournament) {
+        const ids = new Set();
+        if (!api.isLoggedIn()) return ids;
+
+        const myId = getLoggedUserClientId();
+        const list = Array.isArray(participantsPayload?.participants) ? participantsPayload.participants : [];
+        const format = String(participantsPayload?.format || tournament?.format || '').toUpperCase();
+        const isTeam = isTeamTournamentFormat(format);
+
+        if (isTeam) {
+            const myTeamIds = new Set();
+            const registeredTeamId = getRegisteredTeamIdForTournament(tournament, userCtx);
+            if (registeredTeamId) myTeamIds.add(String(registeredTeamId));
+            (userCtx?.allTeams || []).forEach((team) => {
+                if (isLoggedUserMemberOfTeam(team) && tournamentMatchesTeamRegistration(team, tournament)) {
+                    if (team.id != null) myTeamIds.add(String(team.id));
+                }
+            });
+
+            list.forEach((item) => {
+                const teamId = item?.team?.id;
+                if (teamId != null && myTeamIds.has(String(teamId))) {
+                    rememberParticipantIds(item, ids);
+                    return;
+                }
+                const players = item?.team?.players || [];
+                if (myId && players.some((p) => Number(memberClientId(p)) === myId)) {
+                    rememberParticipantIds(item, ids);
+                }
+            });
+            return ids;
+        }
+
+        if (!myId) return ids;
+        list.forEach((item) => {
+            if (Number(memberClientId(item?.player)) === myId) {
+                rememberParticipantIds(item, ids);
+            }
+        });
+        return ids;
+    }
+
+    function isMatchForLoggedUser(match, myParticipantIds) {
+        if (!(myParticipantIds instanceof Set) || !myParticipantIds.size) return false;
+        const home = match?.homeParticipantId;
+        const away = match?.awayParticipantId;
+        if (home != null && home !== '' && myParticipantIds.has(String(home))) return true;
+        if (away != null && away !== '' && myParticipantIds.has(String(away))) return true;
+        return false;
+    }
+
     function matchSideLabel(match, side, nameMap) {
         const name = side === 'home' ? match.homeParticipantName : match.awayParticipantName;
         const id = side === 'home' ? match.homeParticipantId : match.awayParticipantId;
@@ -2220,7 +2255,298 @@
         return na - nb;
     }
 
-    function renderMatchesGroupsHtml(matches, nameMap) {
+    const BRACKET_ROUND_ORDER = {
+        ROUND_OF_32: 10,
+        ROUND_OF_16: 20,
+        QUARTER_FINAL: 30,
+        QUARTERFINAL: 30,
+        SEMI_FINAL: 40,
+        SEMIFINAL: 40,
+        FINAL: 50,
+        THIRD_PLACE: 60,
+    };
+
+    function normalizeMatchRoundType(m) {
+        const key = String(m?.roundType || '').toUpperCase();
+        if (key === 'SEMIFINAL') return 'SEMI_FINAL';
+        if (key === 'QUARTERFINAL') return 'QUARTER_FINAL';
+        return key;
+    }
+
+    function isGroupStageMatch(m) {
+        const rt = normalizeMatchRoundType(m);
+        if (rt === 'GROUP_STAGE' || rt === 'GROUP') return true;
+        if (m.groupNumber != null && m.groupNumber !== '') return true;
+        const phase = String(m.phaseLabel || m.roundName || roundTypeLabel(m.roundType) || '').toLowerCase();
+        return phase.includes('grupo') || phase.includes('group stage') || phase.includes('fase de grupos');
+    }
+
+    function matchBracketRoundKey(m) {
+        const rt = normalizeMatchRoundType(m);
+        if (rt && BRACKET_ROUND_ORDER[rt] != null) return rt;
+        const rn = matchRoundValue(m);
+        if (rn != null && rn !== '') return `R${rn}`;
+        return 'OTHER';
+    }
+
+    function bracketRoundSortValue(roundKey) {
+        if (BRACKET_ROUND_ORDER[roundKey] != null) return BRACKET_ROUND_ORDER[roundKey];
+        if (String(roundKey).startsWith('R')) {
+            const n = Number(String(roundKey).slice(1));
+            return Number.isFinite(n) ? n * 5 + 5 : 999;
+        }
+        return 999;
+    }
+
+    function bracketRoundLabel(roundKey) {
+        if (roundKey === 'FINAL') return 'Final (1º lugar)';
+        if (roundKey === 'THIRD_PLACE') return 'Disputa de 3º lugar';
+        const label = roundTypeLabel(roundKey);
+        if (label) return label;
+        if (String(roundKey).startsWith('R')) return `Rodada ${String(roundKey).slice(1)}`;
+        return 'Partidas';
+    }
+
+    function bracketRoundMod(roundKey) {
+        return String(roundKey).toLowerCase().replace(/_/g, '-');
+    }
+
+    function formatMatchScheduleShort(iso) {
+        if (!iso) return null;
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return null;
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        return `${dd}/${mm} ${hh}:${min}`;
+    }
+
+    function bracketIconFlag() {
+        return `<svg class="ag-bracket__badge-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 4v16M5 4h11l-2.5 3L16 10H5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>`;
+    }
+
+    function bracketIconTrophy() {
+        return `<svg class="ag-bracket__badge-icon ag-bracket__badge-icon--trophy" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M8 4h8v3a4 4 0 01-8 0V4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M12 11v3M9 20h6M10 14h4v3H10v-3Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M6 4H4a2 2 0 002 3M18 4h2a2 2 0 01-2 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>`;
+    }
+
+    function bracketIconMedal() {
+        return `<svg class="ag-bracket__badge-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="14" r="4.5" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M9.5 6.5 12 11l2.5-4.5M7 4.5h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>`;
+    }
+
+    function bracketRoundBadgeIcon(roundKey) {
+        if (roundKey === 'FINAL') return bracketIconTrophy();
+        if (roundKey === 'THIRD_PLACE') return bracketIconMedal();
+        return bracketIconFlag();
+    }
+
+    function bracketMatchSideHtml(match, side, nameMap) {
+        const name = side === 'home' ? match.homeParticipantName : match.awayParticipantName;
+        const id = side === 'home' ? match.homeParticipantId : match.awayParticipantId;
+        const isWinner = match.winnerParticipantId != null && id != null
+            && String(match.winnerParticipantId) === String(id);
+        if (!name && (id == null || id === '' || !(nameMap instanceof Map) || !nameMap.has(String(id)))) {
+            return '<span class="ag-bracket__tbd">*A definir*</span>';
+        }
+        let label;
+        if (name) label = escapeHtml(name);
+        else label = escapeHtml(nameMap.get(String(id)));
+        const mod = isWinner ? ' ag-bracket__player--winner' : '';
+        return `<span class="ag-bracket__player${mod}">${label}</span>`;
+    }
+
+    function renderBracketMatchCard(match, nameMap, myParticipantIds) {
+        const schedule = formatMatchScheduleShort(match.scheduledAt);
+        const scheduleHtml = schedule
+            ? `<time class="ag-bracket__match-time" datetime="${escapeAttr(match.scheduledAt)}">${escapeHtml(schedule)}</time>`
+            : '<span class="ag-bracket__match-time ag-bracket__match-time--tbd">A definir</span>';
+        const hasWinner = match.winnerParticipantId != null;
+        const status = String(match.status || '').toUpperCase();
+        const showTrophy = hasWinner || status === 'COMPLETED' || status === 'WALKOVER';
+        const metaRight = showTrophy ? bracketIconTrophy() : '';
+        const hasScore = match.homeScore != null || match.awayScore != null;
+        const scoreHtml = hasScore
+            ? `<span class="ag-bracket__match-score">${escapeHtml(String(match.homeScore ?? 0))} × ${escapeHtml(String(match.awayScore ?? 0))}</span>`
+            : '';
+        const mineClass = isMatchForLoggedUser(match, myParticipantIds) ? ' ag-bracket__match--mine' : '';
+
+        return `<article class="ag-bracket__match${mineClass}">
+            <header class="ag-bracket__match-head">
+                ${scheduleHtml}
+                <span class="ag-bracket__match-meta">${scoreHtml}${metaRight}</span>
+            </header>
+            <div class="ag-bracket__match-body">
+                <div class="ag-bracket__slot">${bracketMatchSideHtml(match, 'home', nameMap)}</div>
+                <div class="ag-bracket__vs" aria-hidden="true"><span>vs</span></div>
+                <div class="ag-bracket__slot">${bracketMatchSideHtml(match, 'away', nameMap)}</div>
+            </div>
+        </article>`;
+    }
+
+    function renderBracketRoundBadge(roundKey) {
+        const mod = bracketRoundMod(roundKey);
+        let badgeClass = 'ag-bracket__badge';
+        if (roundKey === 'FINAL') badgeClass += ' ag-bracket__badge--final';
+        else if (roundKey === 'THIRD_PLACE') badgeClass += ' ag-bracket__badge--third';
+        else if (roundKey === 'SEMI_FINAL') badgeClass += ' ag-bracket__badge--semi';
+        else badgeClass += ' ag-bracket__badge--default';
+        return `<div class="${badgeClass} ag-bracket__badge--${mod}">
+            ${bracketRoundBadgeIcon(roundKey)}
+            <span>${escapeHtml(bracketRoundLabel(roundKey))}</span>
+        </div>`;
+    }
+
+    function renderBracketConnector(prevCount, nextCount) {
+        if (prevCount === 2 && nextCount === 1) {
+            return `<div class="ag-bracket__connector ag-bracket__connector--2-1" aria-hidden="true">
+                <svg viewBox="0 0 32 220" preserveAspectRatio="none">
+                    <path d="M0 52 H14 V110 H0" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                    <path d="M0 168 H14 V110" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                    <path d="M14 110 H32" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                </svg>
+            </div>`;
+        }
+        if (prevCount === 4 && nextCount === 2) {
+            return `<div class="ag-bracket__connector ag-bracket__connector--4-2" aria-hidden="true">
+                <svg viewBox="0 0 32 420" preserveAspectRatio="none">
+                    <path d="M0 52 H14 V105 H0" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                    <path d="M0 158 H14 V105" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                    <path d="M0 262 H14 V315 H0" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                    <path d="M0 368 H14 V315" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                    <path d="M14 105 H32" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                    <path d="M14 315 H32" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>
+                </svg>
+            </div>`;
+        }
+        return '<div class="ag-bracket__connector ag-bracket__connector--simple" aria-hidden="true"></div>';
+    }
+
+    function groupKnockoutByRound(matches) {
+        const map = new Map();
+        matches.forEach((m) => {
+            const key = matchBracketRoundKey(m);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(m);
+        });
+        map.forEach((list) => {
+            list.sort((a, b) => {
+                const na = Number(a.matchNumber ?? a.bracketPosition ?? 0);
+                const nb = Number(b.matchNumber ?? b.bracketPosition ?? 0);
+                return na - nb;
+            });
+        });
+        return [...map.entries()].sort((a, b) => bracketRoundSortValue(a[0]) - bracketRoundSortValue(b[0]));
+    }
+
+    function renderBracketColumn(roundKey, items, nameMap, myParticipantIds) {
+        const mod = bracketRoundMod(roundKey);
+        const cards = items.map((m) => renderBracketMatchCard(m, nameMap, myParticipantIds)).join('');
+        return `<div class="ag-bracket__column ag-bracket__column--${mod}">
+            ${renderBracketRoundBadge(roundKey)}
+            <div class="ag-bracket__stack">${cards}</div>
+        </div>`;
+    }
+
+    function renderKnockoutBracketHtml(matches, nameMap, myParticipantIds) {
+        const list = (Array.isArray(matches) ? matches.slice() : []).filter((m) => !isGroupStageMatch(m));
+        if (!list.length) return '';
+
+        const byRound = groupKnockoutByRound(list);
+        const mainRounds = byRound.filter(([key]) => key !== 'THIRD_PLACE');
+        const thirdRound = byRound.find(([key]) => key === 'THIRD_PLACE');
+
+        if (!mainRounds.length) return '';
+
+        const boardParts = [];
+        mainRounds.forEach(([roundKey, items], index) => {
+            if (index > 0) {
+                const prevCount = mainRounds[index - 1][1].length;
+                boardParts.push(renderBracketConnector(prevCount, items.length));
+            }
+            boardParts.push(renderBracketColumn(roundKey, items, nameMap, myParticipantIds));
+        });
+
+        const thirdHtml = thirdRound
+            ? `<aside class="ag-bracket__third">
+                ${renderBracketColumn(thirdRound[0], thirdRound[1], nameMap, myParticipantIds)}
+            </aside>`
+            : '';
+
+        return `<div class="ag-bracket">
+            <div class="ag-bracket__board">${boardParts.join('')}</div>
+            ${thirdHtml}
+        </div>`;
+    }
+
+    function renderGroupPhaseMatchesHtml(groupMatches, nameMap, tournament, myParticipantIds) {
+        const groups = new Map();
+        groupMatches.forEach((m) => {
+            const num = m.groupNumber != null && m.groupNumber !== '' ? Number(m.groupNumber) : 0;
+            const key = num || 'geral';
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(m);
+        });
+
+        const cards = [...groups.entries()]
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([groupNumber, items]) => {
+                const sorted = items.slice().sort(sortMatches);
+                const progress = getGroupMatchProgress(groupMatches, groupNumber, null);
+                const progressLabel = `${progress.completed}/${progress.total} jogos`;
+                const matchCards = sorted.map((m) => renderBracketMatchCard(m, nameMap, myParticipantIds)).join('');
+                return `<article class="ag-group-card ag-group-card--fixtures">
+                    <header class="ag-group-card__header">
+                        <div class="ag-group-card__header-main">
+                            ${groupCardIconUsers()}
+                            <div class="ag-group-card__header-text">
+                                <h4 class="ag-group-card__title">Grupo ${escapeHtml(String(groupNumber))}</h4>
+                                <p class="ag-group-card__meta">${sorted.length} partida${sorted.length === 1 ? '' : 's'}</p>
+                            </div>
+                        </div>
+                        <div class="ag-group-card__header-side">
+                            <span class="ag-group-card__progress">${escapeHtml(progressLabel)}</span>
+                        </div>
+                    </header>
+                    <div class="ag-group-card__body">
+                        <div class="ag-group-card__section-label">
+                            ${groupCardIconList()}
+                            <span>Confrontos</span>
+                        </div>
+                        <div class="ag-group-card__fixtures">${matchCards}</div>
+                    </div>
+                </article>`;
+            }).join('');
+
+        return `<div class="ag-group-phase ag-group-phase--fixtures">
+            <div class="ag-group-phase__grid">${cards}</div>
+        </div>`;
+    }
+
+    function renderTournamentMatchesContent(matches, nameMap, tournament, myParticipantIds) {
+        const all = Array.isArray(matches) ? matches.slice() : [];
+        if (!all.length) return '';
+        const groupMatches = all.filter(isGroupStageMatch);
+        const knockoutMatches = all.filter((m) => !isGroupStageMatch(m));
+        const parts = [];
+        const bracketHtml = renderKnockoutBracketHtml(knockoutMatches, nameMap, myParticipantIds);
+        if (bracketHtml) parts.push(bracketHtml);
+        if (groupMatches.length) {
+            parts.push(renderGroupPhaseMatchesHtml(groupMatches, nameMap, tournament, myParticipantIds));
+        }
+        if (!parts.length) return renderMatchesGroupsHtml(all, nameMap, myParticipantIds);
+        return parts.join('');
+    }
+
+    function renderMatchesGroupsHtml(matches, nameMap, myParticipantIds) {
         const list = (Array.isArray(matches) ? matches.slice() : []).sort(sortMatches);
         if (!list.length) return '';
         const groups = new Map();
@@ -2230,13 +2556,16 @@
             groups.get(key).push(m);
         });
         return [...groups.entries()].map(([label, items]) => {
-            const rows = items.map((m) => `<tr>
+            const rows = items.map((m) => {
+                const mineClass = isMatchForLoggedUser(m, myParticipantIds) ? ' class="ag-match-row--mine"' : '';
+                return `<tr${mineClass}>
                 <td>${escapeHtml(String(m.matchNumber ?? m.bracketPosition ?? '—'))}</td>
                 <td><div class="ag-match-versus">${matchSideLabel(m, 'home', nameMap)} <span class="ag-match-versus__vs">vs</span> ${matchSideLabel(m, 'away', nameMap)}</div></td>
                 <td>${matchScoreLabel(m)}</td>
                 <td><span class="ag-badge ag-badge--muted">${escapeHtml(matchStatusLabel(m.status))}</span></td>
                 <td>${matchScheduleLabel(m)}</td>
-            </tr>`).join('');
+            </tr>`;
+            }).join('');
             return `<div class="ag-match-group">
                 <h4 class="ag-match-group__title">${escapeHtml(label)}</h4>
                 <div class="ag-table-wrap">
@@ -2249,7 +2578,7 @@
         }).join('');
     }
 
-    function renderTournamentMatchesSection(tournament, matches, participantsPayload) {
+    function renderTournamentMatchesSection(tournament, matches, participantsPayload, userCtx) {
         if (matches === null) {
             if (!api.isLoggedIn()) {
                 return detailSection('Partidas & chaveamento', '<p class="ag-muted">Entre na sua conta para ver as partidas deste torneio.</p>');
@@ -2260,10 +2589,11 @@
             return detailSection('Partidas & chaveamento', '<p class="ag-muted">As partidas ainda não foram geradas pelo organizador.</p>');
         }
         const nameMap = buildParticipantNameMap(participantsPayload);
-        const groupsHtml = renderMatchesGroupsHtml(matches, nameMap);
+        const myParticipantIds = buildLoggedUserParticipantIds(participantsPayload, userCtx, tournament);
+        const contentHtml = renderTournamentMatchesContent(matches, nameMap, tournament, myParticipantIds);
         return detailSection('Partidas & chaveamento', `
-            <p class="ag-muted ag-match-hint">Confrontos ainda não definidos aparecem como “Aguardando classificação”. Os horários são definidos pelo organizador.</p>
-            ${groupsHtml}
+            <p class="ag-muted ag-match-hint">Confrontos ainda não definidos aparecem como “*A definir*”. Os horários são definidos pelo organizador.</p>
+            ${contentHtml}
         `);
     }
 
@@ -2303,6 +2633,177 @@
 
     function standingsHasGroups(entries) {
         return entries.some((e) => e.groupNumber != null && e.groupNumber !== '');
+    }
+
+    function groupPhaseIconGrid() {
+        return `<svg class="ag-group-phase__title-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+            <rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+            <rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+        </svg>`;
+    }
+
+    function groupCardIconUsers() {
+        return `<svg class="ag-group-card__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M3.5 19c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="16.5" cy="9" r="2.2" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M14.5 19c.4-1.8 1.8-3 3.5-3s3.1 1.2 3.5 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>`;
+    }
+
+    function groupCardIconList() {
+        return `<svg class="ag-group-card__section-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M8 6h13M8 12h13M8 18h13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="4" cy="6" r="1.2" fill="currentColor"/>
+            <circle cx="4" cy="12" r="1.2" fill="currentColor"/>
+            <circle cx="4" cy="18" r="1.2" fill="currentColor"/>
+        </svg>`;
+    }
+
+    function standingRowIcon(position) {
+        const pos = Number(position);
+        if (pos === 1) {
+            return `<svg class="ag-group-card__rank-icon ag-group-card__rank-icon--gold" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3l2.2 4.5 4.9.7-3.5 3.4.8 4.9L12 14.8 7.6 16.5l.8-4.9L5 8.2l4.9-.7L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>`;
+        }
+        if (pos === 2) {
+            return `<svg class="ag-group-card__rank-icon ag-group-card__rank-icon--silver" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="10" r="5.5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M8.5 16.5h7l1 4H7.5l1-4Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>`;
+        }
+        if (pos === 3) {
+            return `<svg class="ag-group-card__rank-icon ag-group-card__rank-icon--bronze" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="10" r="5.5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M8.5 16.5h7l1 4H7.5l1-4Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>`;
+        }
+        return `<span class="ag-group-card__rank-dot" aria-hidden="true"></span>`;
+    }
+
+    function getGroupMatchProgress(matches, groupNumber, participantCount) {
+        let completed = 0;
+        let total = 0;
+        if (Array.isArray(matches) && matches.length) {
+            const groupMatches = matches.filter((m) => Number(m.groupNumber) === Number(groupNumber));
+            total = groupMatches.length;
+            completed = groupMatches.filter((m) => {
+                const status = String(m.status || '').toUpperCase();
+                return status === 'COMPLETED' || status === 'WALKOVER' || m.winnerId != null;
+            }).length;
+        }
+        if (total === 0) {
+            const n = Number(participantCount) || 0;
+            total = n >= 2 ? (n * (n - 1)) / 2 : 0;
+        }
+        return { completed, total };
+    }
+
+    function renderGroupQualificationBadges(advanceCount) {
+        const count = Math.max(0, Number(advanceCount) || 0);
+        if (count <= 0) return '';
+        const badges = [];
+        for (let i = 1; i <= Math.min(count, 4); i++) {
+            badges.push(`<span class="ag-group-card__qualify ag-group-card__qualify--${i}">${i}º</span>`);
+        }
+        return `<div class="ag-group-card__qualify-list">${badges.join('')}</div>`;
+    }
+
+    function renderGroupStandingsRow(entry, nameMap, advanceCount) {
+        const pos = Number(entry.position) || 0;
+        const posClass = pos >= 1 && pos <= 4 ? ` ag-group-card__row--pos-${pos}` : '';
+        const name = standingEntryName(entry, nameMap);
+        const qualifyBadge = pos === 1 && advanceCount >= 1
+            ? '<span class="ag-group-card__leader-badge">1º DO GRUPO</span>'
+            : (pos === 2 && advanceCount >= 2
+                ? '<span class="ag-group-card__leader-badge ag-group-card__leader-badge--second">2º DO GRUPO</span>'
+                : '');
+        const points = entry.points ?? 0;
+        const wins = entry.wins ?? 0;
+        const draws = entry.draws ?? 0;
+        const losses = entry.losses ?? 0;
+
+        return `<div class="ag-group-card__row${posClass}">
+            <div class="ag-group-card__participant">
+                ${standingRowIcon(pos)}
+                <div class="ag-group-card__participant-text">
+                    <span class="ag-group-card__participant-name">${name}</span>
+                    ${qualifyBadge}
+                </div>
+            </div>
+            <span class="ag-group-card__stat">${points}</span>
+            <span class="ag-group-card__stat">${wins}</span>
+            <span class="ag-group-card__stat">${draws}</span>
+            <span class="ag-group-card__stat">${losses}</span>
+        </div>`;
+    }
+
+    function renderGroupStandingsCard(groupNumber, entries, nameMap, tournament, matches) {
+        const sorted = entries.slice().sort((a, b) => {
+            const pa = Number(a.position ?? Number.MAX_SAFE_INTEGER);
+            const pb = Number(b.position ?? Number.MAX_SAFE_INTEGER);
+            return pa - pb;
+        });
+        const advanceCount = Number(tournament?.advancePerGroup) || 2;
+        const progress = getGroupMatchProgress(matches, groupNumber, sorted.length);
+        const progressLabel = `${progress.completed}/${progress.total} jogos`;
+
+        const rows = sorted.map((entry) => renderGroupStandingsRow(entry, nameMap, advanceCount)).join('');
+
+        return `<article class="ag-group-card">
+            <header class="ag-group-card__header">
+                <div class="ag-group-card__header-main">
+                    ${groupCardIconUsers()}
+                    <div class="ag-group-card__header-text">
+                        <h4 class="ag-group-card__title">Grupo ${escapeHtml(String(groupNumber))}</h4>
+                        <p class="ag-group-card__meta">${sorted.length} participante${sorted.length === 1 ? '' : 's'}</p>
+                    </div>
+                </div>
+                <div class="ag-group-card__header-side">
+                    ${renderGroupQualificationBadges(advanceCount)}
+                    <span class="ag-group-card__progress">${escapeHtml(progressLabel)}</span>
+                </div>
+            </header>
+            <div class="ag-group-card__body">
+                <div class="ag-group-card__section-label">
+                    ${groupCardIconList()}
+                    <span>Classificação</span>
+                </div>
+                <div class="ag-group-card__table">
+                    <div class="ag-group-card__thead">
+                        <span class="ag-group-card__th ag-group-card__th--name">Participante</span>
+                        <span class="ag-group-card__th">P</span>
+                        <span class="ag-group-card__th">V</span>
+                        <span class="ag-group-card__th">E</span>
+                        <span class="ag-group-card__th">D</span>
+                    </div>
+                    ${rows}
+                </div>
+            </div>
+        </article>`;
+    }
+
+    function renderGroupPhaseStandings(tournament, entries, nameMap, matches) {
+        const groups = new Map();
+        entries.forEach((e) => {
+            const num = e.groupNumber != null && e.groupNumber !== '' ? Number(e.groupNumber) : 0;
+            const key = num || 'geral';
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(e);
+        });
+
+        const cards = [...groups.entries()]
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([groupNumber, items]) => renderGroupStandingsCard(groupNumber, items, nameMap, tournament, matches))
+            .join('');
+
+        return `<section class="ag-detail-section ag-group-phase">
+            <h3 class="ag-detail-section__title"><span>Fase de grupos</span></h3>
+            <div class="ag-group-phase__grid">${cards}</div>
+        </section>`;
     }
 
     function standingEntryName(entry, nameMap) {
@@ -2363,85 +2864,19 @@
         return pa - pb;
     }
 
-    function renderTournamentStandingsSection(tournament, standings, participantsPayload) {
+    function renderTournamentStandingsSection(tournament, standings, participantsPayload, matches) {
         if (!Array.isArray(standings) || !standings.length) return '';
 
         const entries = standings.slice().sort(sortStandings);
         const nameMap = buildParticipantNameMap(participantsPayload);
         const league = standingsHasLeagueStats(entries);
 
-        let content;
         if (standingsHasGroups(entries)) {
-            const groups = new Map();
-            entries.forEach((e) => {
-                const key = e.groupNumber != null && e.groupNumber !== '' ? `Grupo ${e.groupNumber}` : 'Geral';
-                if (!groups.has(key)) groups.set(key, []);
-                groups.get(key).push(e);
-            });
-            content = [...groups.entries()].map(([label, items]) => `
-                <div class="ag-standings-group">
-                    <h4 class="ag-standings-group__title">${escapeHtml(label)}</h4>
-                    ${renderStandingsTable(items, nameMap, league)}
-                </div>
-            `).join('');
-        } else {
-            content = renderStandingsTable(entries, nameMap, league);
+            return renderGroupPhaseStandings(tournament, entries, nameMap, matches);
         }
 
+        let content = renderStandingsTable(entries, nameMap, league);
         return detailSection('Classificação', content);
-    }
-
-    function renderEntryFeeRevenueSection(tournament, revenue) {
-        const data = unwrapRevenuePayload(revenue);
-        const entries = Array.isArray(data.entries) ? data.entries : [];
-        const isTeam = isTeamTournamentFormat(tournament?.format);
-
-        const summaryGrid = [
-            detailItem('Taxa por inscrição', formatEntryFee(data.entryFeeCredits ?? tournament?.entryFeeCredits)),
-            detailItem('Total arrecadado', `${formatCredits(data.collectedCredits)} créditos`),
-            detailItem('Capturado', `${formatCredits(data.capturedCredits)} créditos`),
-            detailItem('Reembolsado', `${formatCredits(data.refundedCredits)} créditos`),
-        ].join('');
-
-        let tableHtml = '<p class="ag-muted">Nenhuma inscrição com taxa registrada ainda.</p>';
-        if (entries.length) {
-            const participantCol = isTeam ? 'Time inscrito' : 'Jogador';
-            const rows = entries.map((entry) => {
-                const participant = entry.teamId
-                    ? `${escapeHtml(entry.teamName || 'Time')}${entry.teamTag ? ` (${escapeHtml(entry.teamTag)})` : ''}`
-                    : playerProfileLink(entry.playerClientUserId, entry.playerNickname || `Jogador #${entry.playerClientUserId}`);
-                const payer = entry.payerClientUserId
-                    ? playerProfileLink(entry.payerClientUserId, `Pagador #${entry.payerClientUserId}`)
-                    : '—';
-                const statusKey = String(entry.status || '').toUpperCase();
-                const statusLabel = ENTRY_FEE_STATUS_LABELS[statusKey] || entry.status || '—';
-                return `<tr>
-                    <td>${participant}</td>
-                    <td>${payer}</td>
-                    <td>${formatCredits(entry.amount)}</td>
-                    <td><span class="ag-badge ag-badge--muted">${escapeHtml(statusLabel)}</span></td>
-                </tr>`;
-            }).join('');
-            tableHtml = `<div class="ag-table-wrap">
-                <table class="ag-table ag-revenue-table">
-                    <thead>
-                        <tr>
-                            <th>${escapeHtml(participantCol)}</th>
-                            <th>Quem pagou</th>
-                            <th>Valor</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>${rows}</tbody>
-                </table>
-            </div>`;
-        }
-
-        return detailSection('Arrecadação de inscrições', `
-            <div class="ag-tournament-meta ag-detail-section__grid">${summaryGrid}</div>
-            ${tableHtml}
-            <p class="ag-muted ag-revenue-hint">Na inscrição por time, a arrecadação mostra o time inscrito; o pagador pode ser o dono ou capitão.</p>
-        `);
     }
 
     function renderTournamentMedia(t) {
@@ -4518,6 +4953,8 @@
             body.innerHTML = renderTournamentDetailBody(t);
 
             let participantsPayload = null;
+            let matches = null;
+            let userCtx = api.isLoggedIn() ? await getTournamentUserContext() : null;
             const participantsEl = $('[data-ag-detail-participants]', root);
             if (participantsEl) {
                 participantsPayload = await fetchTournamentParticipants(t.slug || slug, t);
@@ -4526,34 +4963,20 @@
             }
 
             const matchesEl = $('[data-ag-detail-matches]', root);
+            const standingsEl = $('[data-ag-detail-standings]', root);
+            matches = await fetchTournamentMatches(t.slug || slug, t);
+
             if (matchesEl) {
-                const matches = await fetchTournamentMatches(t.slug || slug, t);
-                const matchesHtml = renderTournamentMatchesSection(t, matches, participantsPayload);
+                const matchesHtml = renderTournamentMatchesSection(t, matches, participantsPayload, userCtx);
                 matchesEl.innerHTML = matchesHtml;
                 matchesEl.hidden = !matchesHtml;
             }
 
-            const standingsEl = $('[data-ag-detail-standings]', root);
             if (standingsEl) {
                 const standings = await fetchTournamentStandings(t.slug || slug, t);
-                const standingsHtml = renderTournamentStandingsSection(t, standings, participantsPayload);
+                const standingsHtml = renderTournamentStandingsSection(t, standings, participantsPayload, matches);
                 standingsEl.innerHTML = standingsHtml;
                 standingsEl.hidden = !standingsHtml;
-            }
-
-            const revenueEl = $('[data-ag-detail-revenue]', root);
-            if (revenueEl) {
-                let revenueHtml = '';
-                if (api.isLoggedIn() && tournamentUsesEntryFees(t) && isTournamentOrganizer(t)) {
-                    try {
-                        const revenueRes = await api.getTournamentEntryFeeRevenue(t.slug || slug);
-                        revenueHtml = renderEntryFeeRevenueSection(t, revenueRes);
-                    } catch (_) {
-                        revenueHtml = detailSection('Arrecadação de inscrições', '<p class="ag-muted">Não foi possível carregar a arrecadação no momento.</p>');
-                    }
-                }
-                revenueEl.innerHTML = revenueHtml;
-                revenueEl.hidden = !revenueHtml;
             }
 
             if (statusRow && statusEl) {
@@ -4569,8 +4992,8 @@
             }
 
             detail.hidden = false;
-            let userCtx = await getTournamentUserContext();
             if (api.isLoggedIn()) {
+                if (!userCtx) userCtx = await getTournamentUserContext();
                 userCtx = {
                     ...userCtx,
                     joinedSlugs: await augmentJoinedSlugsFromTournaments([t], userCtx.joinedSlugs, userCtx),
@@ -4578,6 +5001,13 @@
                 if (isLoggedUserInAnyTeamRegistration(t, userCtx)) {
                     addJoinedSlugToSet(userCtx.joinedSlugs, t);
                 }
+            } else {
+                userCtx = userCtx || {
+                    joinedSlugs: new Set(),
+                    joinedTournamentTeams: new Map(),
+                    registerableTeams: [],
+                    hasRegisterableTeam: false,
+                };
             }
             const isJoined = isLoggedUserParticipatingInTournament(
                 t,
@@ -4603,124 +5033,6 @@
         } finally {
             setLoading(root, false);
         }
-    }
-
-    /* ── Criar torneio ── */
-    function syncCreateTournamentPrizeFields(form) {
-        const prizeType = form.querySelector('[data-ag-prize-type]')?.value || 'MANUAL';
-        const fundingSelect = form.querySelector('[data-ag-prize-funding]');
-        const entryOption = form.querySelector('[data-ag-funding-entry-fees]');
-        const fixedFields = form.querySelector('[data-ag-prize-fixed-fields]');
-        const entryFields = form.querySelector('[data-ag-prize-entry-fields]');
-        const hintEl = form.querySelector('[data-ag-prize-hint]');
-        const poolLabel = form.querySelector('[data-ag-prize-pool-label]');
-        const poolInput = form.querySelector('[name="prizePool"]');
-        const entryInput = form.querySelector('[name="entryFeeCredits"]');
-
-        if (prizeType === 'MANUAL' && entryOption) {
-            entryOption.hidden = true;
-            if (fundingSelect?.value === 'ENTRY_FEES') fundingSelect.value = 'FIXED';
-        } else if (entryOption) {
-            entryOption.hidden = false;
-        }
-
-        const funding = fundingSelect?.value || 'FIXED';
-        const isEntry = funding === 'ENTRY_FEES';
-        const isAuto = prizeType === 'AUTOMATIC';
-
-        if (fixedFields) fixedFields.hidden = isEntry;
-        if (entryFields) entryFields.hidden = !isEntry;
-
-        if (poolInput) poolInput.required = isAuto && !isEntry;
-        if (entryInput) entryInput.required = isEntry;
-        if (poolLabel) {
-            poolLabel.textContent = isAuto && !isEntry
-                ? 'Prêmio fixo (créditos) *'
-                : 'Prêmio fixo (créditos)';
-        }
-
-        if (hintEl) {
-            if (isEntry) {
-                hintEl.textContent = 'Prêmio automático por arrecadação: taxa de inscrição obrigatória. Sem prêmio fixo.';
-            } else if (isAuto) {
-                hintEl.textContent = 'Prêmio automático fixo: informe o prêmio em créditos. Sem taxa de entrada.';
-            } else {
-                hintEl.textContent = 'Prêmio manual: prêmio fixo opcional. Sem taxa de entrada. Cobra apenas o custo de criar.';
-            }
-        }
-    }
-
-    function initCriarTorneio(root) {
-        if (!requireAuth(root)) return;
-        initPageLinks(root);
-        const form = $('[data-ag-form="tournament-create"]', root);
-        if (!form) return;
-
-        const sync = () => syncCreateTournamentPrizeFields(form);
-        form.querySelector('[data-ag-prize-type]')?.addEventListener('change', sync);
-        form.querySelector('[data-ag-prize-funding]')?.addEventListener('change', sync);
-        sync();
-
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const alert = $('[data-ag-alert]', root);
-            const success = $('[data-ag-success]', root);
-            hideAlert(alert);
-            hideAlert(success);
-
-            const fd = new FormData(form);
-            const prizeType = String(fd.get('prizeType') || '').trim();
-            let prizeFunding = String(fd.get('prizeFunding') || 'FIXED').trim();
-            if (prizeType === 'MANUAL') prizeFunding = 'FIXED';
-
-            const body = {
-                name: String(fd.get('name') || '').trim(),
-                type: String(fd.get('type') || '').trim(),
-                format: String(fd.get('format') || '').trim(),
-                participantsLimit: Number(fd.get('participantsLimit')),
-                prizeType,
-                prizeFunding,
-                visibility: String(fd.get('visibility') || 'PUBLIC').trim(),
-            };
-
-            const description = String(fd.get('description') || '').trim();
-            if (description) body.description = description;
-
-            if (prizeFunding === 'ENTRY_FEES') {
-                const fee = parseFloat(fd.get('entryFeeCredits'));
-                if (!Number.isFinite(fee) || fee <= 0) {
-                    showAlert(alert, 'Informe a taxa de inscrição (maior que zero).');
-                    return;
-                }
-                body.entryFeeCredits = fee;
-                const pct = parseFloat(fd.get('feePercentage'));
-                if (Number.isFinite(pct) && pct >= 0) body.feePercentage = pct;
-            } else {
-                const pool = parseFloat(fd.get('prizePool'));
-                if (prizeType === 'AUTOMATIC' && (!Number.isFinite(pool) || pool <= 0)) {
-                    showAlert(alert, 'Prêmio fixo obrigatório para torneio automático.');
-                    return;
-                }
-                if (Number.isFinite(pool) && pool > 0) body.prizePool = pool;
-            }
-
-            const submitBtn = form.querySelector('[type="submit"]');
-            if (submitBtn) submitBtn.disabled = true;
-            try {
-                const res = await api.createTournament(body);
-                const created = res?.data ?? res;
-                showAlert(success, 'Torneio criado com sucesso!', 'success');
-                const slug = created?.slug;
-                const detailUrl = slug ? tournamentDetailHref(slug) : '';
-                if (detailUrl) {
-                    setTimeout(() => { window.location.href = detailUrl; }, 800);
-                }
-            } catch (err) {
-                showAlert(alert, err.message || 'Não foi possível criar o torneio.');
-            } finally {
-                if (submitBtn) submitBtn.disabled = false;
-            }
-        });
     }
 
     /* ── Dashboard ── */
@@ -6912,13 +7224,16 @@
         try {
             const tournaments = extractPageContent(await api.listMyJoined());
             if (!tournaments.length) { empty.hidden = false; return; }
+            const userCtx = await getTournamentUserContext();
             const sections = [];
             for (const t of tournaments) {
                 try {
+                    const participantsPayload = await fetchTournamentParticipants(t.slug, t);
                     const matches = unwrapMatchesList(await api.listMatches(t.slug));
                     if (!matches.length) continue;
-                    const nameMap = buildParticipantNameMap(await fetchTournamentParticipants(t.slug, t));
-                    const groupsHtml = renderMatchesGroupsHtml(matches, nameMap);
+                    const nameMap = buildParticipantNameMap(participantsPayload);
+                    const myParticipantIds = buildLoggedUserParticipantIds(participantsPayload, userCtx, t);
+                    const groupsHtml = renderTournamentMatchesContent(matches, nameMap, t, myParticipantIds);
                     if (!groupsHtml) continue;
                     sections.push(`<section class="ag-match-section"><h3>${tournamentNameHtml(t)}</h3>${groupsHtml}</section>`);
                 } catch { /* skip */ }
@@ -6951,7 +7266,6 @@
         jogador: initJogador,
         dashboard: initDashboard,
         painel: initDashboard,
-        'criar-torneio': initCriarTorneio,
     };
 
     function boot() {
